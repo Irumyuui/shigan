@@ -7,7 +7,9 @@
 #   just ci         typecheck + unit tests + integration tests
 #   just package    build and produce a development VSIX in artifacts/
 
-set windows-shell := ["powershell.exe", "-NoLogo", "-NoProfile", "-Command"]
+# PowerShell only on Windows; other platforms use just's default `sh -cu`.
+[windows]
+set shell := ["powershell.exe", "-NoLogo", "-NoProfile", "-Command"]
 
 # List available recipes
 _default:

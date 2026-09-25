@@ -9,7 +9,7 @@ The extension is **Shigan** (`shigan.*` settings, `shigan.*` command ids), and t
 ## Commands
 
 `bun` is the package manager (`bun.lock`); the `just` recipes wrap npm scripts that call `node`.
-The justfile pins `windows-shell`, so no POSIX `sh` is assumed.
+The justfile selects PowerShell only on Windows (`[windows] set shell`); on Linux/macOS just's default `sh -cu` is used, so the same recipes also run in CI.
 
 ```sh
 just                   # list recipes
