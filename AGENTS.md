@@ -24,7 +24,7 @@ bunx vitest run test/unit/hints.test.ts -t "single-line"   # one test
 - **Fastest way to see behaviour**: `bun run inspect <file.c> [always|cursor]` prints every hint with its text,
   `(inactive)` marker and per-segment jump targets. It honours `<file>.macros.json` seeds like the fixture harness.
 - Manual check: F5 (`.vscode/launch.json`) + `test/manual/sample.c` + `CHECKLIST.md`.
-- No CI workflows: verification is local (`just test`, `just test-integration`).
+- CI: `.github/workflows/ci.yml` runs `just typecheck test-unit` and `xvfb-run --auto-servernum just test-integration` on ubuntu-latest for every push/PR, then `just package` and uploads the VSIX artifact. CI installs pinned just 1.58.0 in BOTH jobs; bump `JUST_VERSION` and `JUST_SHA256` together when upgrading, and keep the two install steps identical.
 
 ## Architecture
 

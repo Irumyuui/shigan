@@ -1,5 +1,7 @@
 # Shigan
 
+[![CI](https://github.com/Irumyuui/shigan/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Irumyuui/shigan/actions/workflows/ci.yml)
+
 Clickable bracket and preprocessor (`#if` / `#else` / `#endif`) pairing hints for C.
 
 ```
@@ -93,6 +95,8 @@ just package-min       # -> artifacts/shigan-<version>-min.vsix
 just install           # package, then `code --install-extension`
 just clean             # remove dist/, out/, artifacts/
 ```
+
+CI (`.github/workflows/ci.yml`) runs the same recipes on every push and pull request: typecheck + unit tests, integration tests under `xvfb-run` on a clean Ubuntu runner, then `just package` and attaches the VSIX to the run.
 
 Without `just`: `bun run build`, `bun run test:unit`, `bun run package`,
 `bun run package:min`, `bun run install:vsix`.
