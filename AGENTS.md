@@ -67,6 +67,9 @@ bunx vitest run test/unit/hints.test.ts -t "single-line"   # one test
 
 - `test/unit/**` — vitest, pure logic. `test/unit/support.ts` exposes `predicates(text, seed)` mirroring the
   extension's evaluation; use it for anything involving `#if`.
+- `test/unit/performance.test.ts` is a scale guard, not a benchmark: synthetic 20k–100k-line documents with
+  deliberately generous wall-clock budgets. Keep the budgets loose (they catch superlinear regressions, not
+  micro-timing) — tightening them makes the suite flaky.
 - `test/fixtures/{brackets,macros}/*.c` + `.expected.json` golden files; a macro fixture may add `<case>.macros.json`
   to seed macros. Verify expectations by hand or with `bun run inspect` — never blind-snapshot.
 - `test/integration/**` runs in a real VSCode; `.vscode-test.mjs` globs `out/integration/**/*.test.js`, built from
