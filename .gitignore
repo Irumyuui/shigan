@@ -6,3 +6,4 @@ test/integration/workspace/.vscode/
 test/integration/workspace/fixture/
 *.vsix
 .vscode
+artifacts
