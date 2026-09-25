@@ -1,0 +1,20 @@
+{
+  "extension.displayName": "Shigan",
+  "extension.description": "Clickable bracket and preprocessor (#if/#else/#endif) pairing hints for C.",
+  "configuration.title": "Shigan",
+
+  "shigan.enable.description": "Enable Shigan.",
+  "shigan.languages.description": "Language ids Shigan is active for. Defaults to C only.",
+  "shigan.trigger.markdownDescription": "When to show pair hints (applies to both kinds).\n\n- `cursor`: only the pair the caret is on. A bracket needs the caret on/next to it; a directive needs the caret anywhere on its line.\n- `always`: every bracket pair that spans more than one line, plus every directive pair — nothing is hidden because of `#if` state. Brackets inside a disabled branch are simply not matched (see `shigan.preprocessor.skipInactiveBrackets`).\n- `hover`: in the hover tooltip only.\n- `off`: never.\n\nEach segment of a hint is clickable (`}` -> `{`; `#else`/`#elif` -> the previous directive; on an `#endif`, `<-` -> the preceding branch and `<=` -> the opening `#if`).",
+  "shigan.show.description": "Which kinds of pairs to hint: 'brackets' = ()[]{} and 'macros' = #if/#elif/#else/#endif.",
+  "shigan.compileFlags.itemDescription": "A compiler-style flag, e.g. -DFOO=1, -UBAR, -std=c11, -Iinclude.",
+  "shigan.compileFlags.markdownDescription": "Compiler-style flags used when deciding which conditional branches are active, e.g. `[\"-DDEBUG=1\", \"-Iinclude\", \"-std=c11\"]`. Mirrors clangd's `CompileFlags.Add`. Unknown flags are ignored. `${workspaceFolder}`, `${fileDirname}` and `${env:NAME}` are expanded.",
+  "shigan.inheritCompileCommands.description": "Also read -D/-I/-std from the nearest compile_commands.json for the current file. Flags from 'shigan.compileFlags' take precedence.",
+  "shigan.preprocessor.trackFileDefines.description": "Evaluate #define/#undef found in the current file when deciding which conditional branches are active.",
+  "shigan.preprocessor.skipInactiveBrackets.description": "Do not match brackets that sit inside a conditional branch which is known to be inactive (e.g. #if 0).",
+  "shigan.preprocessor.skipInactiveDirectives.description": "Hide the hint on #else/#elif/#endif when the branch (or, for #endif, the whole block) it refers to is inactive. Off by default: a directive line is live code, so its hint is shown even for a fully inactive #if 0 block.",
+  "shigan.preprocessor.markInactive.description": "Append \"(inactive)\" to hints that refer to a branch/block which is known to be inactive.",
+  "shigan.showRange.description": "Include the ':start-end' line range in the hint text.",
+  "shigan.showRangeThreshold.description": "Hide the ':start-end' range when the opening and closing lines are at most this many lines apart (e.g. with 1, a pair on two adjacent lines hides the range). 0 always shows the range.",
+  "shigan.showLabel.description": "Include the opening context in the hint text: the opening line's statement for brackets, the directive text (e.g. '#if X') for macros."
+}

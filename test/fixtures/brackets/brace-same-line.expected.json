@@ -1,0 +1,9 @@
+[
+  {
+    "line": 2,
+    "text": " <- :1-3 if (a == 1)",
+    "kind": "bracket",
+    "openLine": 0,
+    "closeLine": 2
+  }
+]

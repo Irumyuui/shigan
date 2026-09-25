@@ -1,0 +1,8 @@
+node_modules/
+dist/
+out/
+.vscode-test/
+test/integration/workspace/.vscode/
+test/integration/workspace/fixture/
+*.vsix
+.vscode

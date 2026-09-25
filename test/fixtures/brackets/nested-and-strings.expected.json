@@ -1,0 +1,16 @@
+[
+  {
+    "line": 5,
+    "text": " <- :4-6 /* } neither is this */",
+    "kind": "bracket",
+    "openLine": 3,
+    "closeLine": 5
+  },
+  {
+    "line": 6,
+    "text": " <- :1-7",
+    "kind": "bracket",
+    "openLine": 0,
+    "closeLine": 6
+  }
+]

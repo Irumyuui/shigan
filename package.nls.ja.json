@@ -1,0 +1,20 @@
+{
+  "extension.displayName": "Shigan",
+  "extension.description": "C 向けの、クリックできる括弧・プリプロセッサ指令（#if/#else/#endif）の対応ヒント。",
+  "configuration.title": "Shigan",
+
+  "shigan.enable.description": "Shigan を有効にします。",
+  "shigan.languages.description": "Shigan を有効にする言語 ID。既定では C のみです。",
+  "shigan.trigger.markdownDescription": "対応ヒントを表示するタイミング（括弧とマクロの両方に適用）。\n\n- `cursor`：カーソルがある対応のみ表示。括弧はカーソルが括弧の上か隣にある必要があり、指令はその行のどこかにカーソルがあれば表示されます。\n- `always`：複数行にまたがるすべての括弧対応と、すべての指令対応を表示します。`#if` の状態によって隠されることはありません。無効な分岐内の括弧はそもそも対応付けの対象外です（`shigan.preprocessor.skipInactiveBrackets` を参照）。\n- `hover`：ホバー時のツールチップにのみ表示します。\n- `off`：常に表示しません。\n\nヒントの各セグメントはクリックでジャンプできます（`}` -> `{`、`#else`/`#elif` -> 直前の指令、`#endif` の `<-` -> 直前の分岐、`<=` -> 先頭の `#if`）。",
+  "shigan.show.description": "表示する対応の種類：'brackets' = ()[]{}、'macros' = #if/#elif/#else/#endif。",
+  "shigan.compileFlags.itemDescription": "コンパイラ形式のオプション（例：-DFOO=1、-UBAR、-std=c11、-Iinclude）。",
+  "shigan.compileFlags.markdownDescription": "条件分岐が有効かどうかの判定に使うコンパイラ形式のオプション（例：`[\"-DDEBUG=1\", \"-Iinclude\", \"-std=c11\"]`）。clangd の `CompileFlags.Add` に対応します。解釈できないオプションは無視されます。`${workspaceFolder}`、`${fileDirname}`、`${env:NAME}` を展開します。",
+  "shigan.inheritCompileCommands.description": "カレントファイルに最も近い compile_commands.json から -D/-I/-std も読み取ります。`shigan.compileFlags` の設定が優先されます。",
+  "shigan.preprocessor.trackFileDefines.description": "条件分岐が有効かどうかの判定に、カレントファイル内の #define/#undef を含めます。",
+  "shigan.preprocessor.skipInactiveBrackets.description": "無効と判定された条件分岐（例： #if 0）内の括弧を対応付けの対象から除外します。",
+  "shigan.preprocessor.skipInactiveDirectives.description": "#else/#elif/#endif が参照する分岐（#endif の場合は条件ブロック全体）が無効なとき、そのヒントを非表示にします。既定はオフです。指令行自体は有効なコードなので、完全に無効な #if 0 ブロックでもヒントは表示されます。",
+  "shigan.preprocessor.markInactive.description": "無効と判定された分岐／ブロックを参照するヒントに \"(inactive)\" を付加します。",
+  "shigan.showRange.description": "ヒントのテキストに ':開始-終了' の行範囲を含めます。",
+  "shigan.showRangeThreshold.description": "開始行と終了行の差がこの行数以下のとき、':開始-終了' の範囲を省略します（例：1 にすると隣接する 2 行の対応で範囲が省略されます）。0 は常に範囲を表示します。",
+  "shigan.showLabel.description": "ヒントのテキストに先頭側の文脈を含めます。括弧では開き括弧がある行の文、マクロでは指令のテキスト（例：'#if X'）です。"
+}

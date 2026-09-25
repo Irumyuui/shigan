@@ -1,0 +1,9 @@
+[
+  { "line": 5, "text": " <- :4-6 #ifdef INNER", "kind": "macro", "inactive": true },
+  { "line": 7, "text": " <- :6-8 #else <= :4-8 #ifdef INNER", "kind": "macro", "inactive": true },
+  { "line": 9, "text": " <- :1-10 #ifdef OUTER", "kind": "macro" },
+  { "line": 13, "text": " <- :12-14 #if defined(A) && defined(B)", "kind": "macro", "inactive": true },
+  { "line": 15, "text": " <- :14-16 #elif defined(A) || defined(B)", "kind": "macro" },
+  { "line": 17, "text": " <- :16-18 #else <= :12-18 #if defined(A) && defined(B)", "kind": "macro" },
+  { "line": 19, "text": " <- :10-20 #else <= :1-20 #ifdef OUTER", "kind": "macro" }
+]

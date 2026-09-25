@@ -1,0 +1,20 @@
+{
+  "extension.displayName": "Shigan",
+  "extension.description": "为 C 提供可点击的括号与预处理指令（#if/#else/#endif）配对提示。",
+  "configuration.title": "Shigan",
+
+  "shigan.enable.description": "启用 Shigan。",
+  "shigan.languages.description": "Shigan 生效的语言 ID，默认仅 C。",
+  "shigan.trigger.markdownDescription": "何时显示配对提示（对括号与宏同时生效）。\n\n- `cursor`：仅显示光标所在的配对。括号要求光标位于括号上或紧邻；指令要求光标在其所在行的任意位置。\n- `always`：所有跨行的括号配对，以及全部指令配对；不会因为 `#if` 状态而隐藏。被禁用分支里的括号本身就不参与配对（见 `shigan.preprocessor.skipInactiveBrackets`）。\n- `hover`：仅在悬停提示中显示。\n- `off`：从不显示。\n\n提示的每一段都可点击跳转（`}` -> `{`；`#else`/`#elif` -> 上一条指令；`#endif` 的 `<-` -> 前一段、`<=` -> 开头的 `#if`）。",
+  "shigan.show.description": "要显示哪几类配对：'brackets' = ()[]{}，'macros' = #if/#elif/#else/#endif。",
+  "shigan.compileFlags.itemDescription": "一条编译器风格选项，例如 -DFOO=1、-UBAR、-std=c11、-Iinclude。",
+  "shigan.compileFlags.markdownDescription": "用于判断条件分支是否激活的编译器风格选项，例如 `[\"-DDEBUG=1\", \"-Iinclude\", \"-std=c11\"]`。与 clangd 的 `CompileFlags.Add` 一致。无法识别的选项会被忽略。支持 `${workspaceFolder}`、`${fileDirname}`、`${env:NAME}` 变量。",
+  "shigan.inheritCompileCommands.description": "同时读取当前文件最近的 compile_commands.json 中的 -D/-I/-std。`shigan.compileFlags` 中的设置优先。",
+  "shigan.preprocessor.trackFileDefines.description": "判断条件分支是否激活时，纳入当前文件内的 #define/#undef。",
+  "shigan.preprocessor.skipInactiveBrackets.description": "不配对位于已知非激活条件分支（如 #if 0）内的括号。",
+  "shigan.preprocessor.skipInactiveDirectives.description": "当 #else/#elif/#endif 所引用的分支（对 #endif 而言是整个条件块）处于非激活状态时，隐藏该提示。默认关闭：指令行本身是活代码，因此即使整个 #if 0 块都非激活，提示依然显示。",
+  "shigan.preprocessor.markInactive.description": "对指向已知非激活分支/条件块的提示追加 \"(inactive)\" 标记。",
+  "shigan.showRange.description": "在提示文本中包含 ':起-止' 行号范围。",
+  "shigan.showRangeThreshold.description": "当开闭两行相距不超过该行数时，省略 ':起-止' 范围（例如设为 1 时，相邻两行的配对会省略范围）。0 表示始终显示范围。",
+  "shigan.showLabel.description": "在提示文本中包含开头上下文：括号取开括号所在行的语句，宏取指令原文（如 '#if X'）。"
+}

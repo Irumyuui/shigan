@@ -1,0 +1,152 @@
+{
+  "name": "shigan",
+  "displayName": "%extension.displayName%",
+  "description": "%extension.description%",
+  "version": "0.0.1",
+  "publisher": "miyana-tobari",
+  "author": {
+    "name": "宮凪帷"
+  },
+  "license": "MIT",
+  "l10n": "./l10n",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Other"
+  ],
+  "keywords": [
+    "c",
+    "bracket",
+    "preprocessor",
+    "matching"
+  ],
+  "activationEvents": [
+    "onLanguage:c"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "configuration": {
+      "title": "%configuration.title%",
+      "properties": {
+        "shigan.enable": {
+          "type": "boolean",
+          "default": true,
+          "description": "%shigan.enable.description%"
+        },
+        "shigan.languages": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "c"
+          ],
+          "description": "%shigan.languages.description%"
+        },
+        "shigan.trigger": {
+          "type": "string",
+          "enum": [
+            "cursor",
+            "always",
+            "hover",
+            "off"
+          ],
+          "default": "cursor",
+          "markdownDescription": "%shigan.trigger.markdownDescription%"
+        },
+        "shigan.show": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "brackets",
+              "macros"
+            ]
+          },
+          "default": [
+            "brackets",
+            "macros"
+          ],
+          "description": "%shigan.show.description%"
+        },
+        "shigan.compileFlags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "description": "%shigan.compileFlags.itemDescription%"
+          },
+          "default": [],
+          "markdownDescription": "%shigan.compileFlags.markdownDescription%"
+        },
+        "shigan.inheritCompileCommands": {
+          "type": "boolean",
+          "default": false,
+          "description": "%shigan.inheritCompileCommands.description%"
+        },
+        "shigan.preprocessor.trackFileDefines": {
+          "type": "boolean",
+          "default": true,
+          "description": "%shigan.preprocessor.trackFileDefines.description%"
+        },
+        "shigan.preprocessor.skipInactiveBrackets": {
+          "type": "boolean",
+          "default": true,
+          "description": "%shigan.preprocessor.skipInactiveBrackets.description%"
+        },
+        "shigan.preprocessor.skipInactiveDirectives": {
+          "type": "boolean",
+          "default": false,
+          "description": "%shigan.preprocessor.skipInactiveDirectives.description%"
+        },
+        "shigan.preprocessor.markInactive": {
+          "type": "boolean",
+          "default": true,
+          "description": "%shigan.preprocessor.markInactive.description%"
+        },
+        "shigan.showRange": {
+          "type": "boolean",
+          "default": true,
+          "description": "%shigan.showRange.description%"
+        },
+        "shigan.showRangeThreshold": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "description": "%shigan.showRangeThreshold.description%"
+        },
+        "shigan.showLabel": {
+          "type": "boolean",
+          "default": true,
+          "description": "%shigan.showLabel.description%"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node esbuild.js",
+    "watch": "node esbuild.js --watch",
+    "build:integration": "esbuild test/integration/*.test.ts --bundle --platform=node --format=cjs --external:vscode --outdir=out/integration",
+    "typecheck": "tsc --noEmit",
+    "test:unit": "vitest run",
+    "test:integration": "bun run build && bun run build:integration && node ./node_modules/@vscode/test-cli/out/bin.mjs",
+    "test": "bun run test:unit",
+    "inspect": "bun run scripts/inspect.ts",
+    "clean": "node scripts/clean.mjs",
+    "package": "node scripts/package.mjs",
+    "package:min": "node scripts/package.mjs --minify",
+    "install:vsix": "node scripts/package.mjs --install"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^22.0.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/test-cli": "^0.0.15",
+    "@vscode/test-electron": "^3.1.0",
+    "@vscode/vsce": "^4.0.0",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0"
+  }
+}

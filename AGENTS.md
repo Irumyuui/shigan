@@ -1,0 +1,76 @@
+# AGENTS.md
+
+VSCode extension for C: clickable bracket and `#if/#else/#endif` pairing hints.
+Hints are **inlay hints** at the end of a line; every segment is clickable and jumps to its target.
+
+The extension is **Shigan** (`shigan.*` settings, `shigan.*` command ids), and the repo folder matches. Only the
+`shigan.*` namespace exists today — don't resurrect pre-rename keys (old settings are silently ignored).
+
+## Commands
+
+`bun` is the package manager (`bun.lock`); the `just` recipes wrap npm scripts that call `node`.
+The justfile pins `windows-shell`, so no POSIX `sh` is assumed.
+
+```sh
+just                   # list recipes
+just test              # tsc --noEmit + vitest (must pass)
+just test-integration  # builds dist + out/integration, runs an isolated VSCode (.vscode-test/, ~320 MB, cached after first run)
+just package           # -> artifacts/shigan-<version>.vsix (esbuild + vsce --no-dependencies)
+just package-min       # minified, no sourcemap
+bunx vitest run test/unit/hints.test.ts        # one unit file
+bunx vitest run test/unit/hints.test.ts -t "single-line"   # one test
+```
+
+- **Fastest way to see behaviour**: `bun run inspect <file.c> [always|cursor]` prints every hint with its text,
+  `(inactive)` marker and per-segment jump targets. It honours `<file>.macros.json` seeds like the fixture harness.
+- Manual check: F5 (`.vscode/launch.json`) + `test/manual/sample.c` + `CHECKLIST.md`.
+- No CI workflows: verification is local (`just test`, `just test-integration`).
+
+## Architecture
+
+- `src/core/**` is deliberately **`vscode`-free** (lexer, bracket matcher, preprocessor pairing, `#if` evaluator,
+  settings mapping) so vitest can run it. Never import `vscode` there; the VSCode side lives in `src/render/**`,
+  `src/config.ts`, `src/extension.ts`.
+- `src/service.ts` owns macros (`compileFlags` + optional `compile_commands.json`), conditional evaluation and the
+  caches. The inlay-hint provider, hover provider and diagnostic command all go through `computeDocumentHints`;
+  settings changes must call `invalidate()`.
+- Rendering is inlay hints on purpose: only `InlayHintLabelPart.command` supports click-to-jump, so colours come from
+  the theme (`editorInlayHint.foreground`) and there is no colour setting.
+- A hint is a `HintPart[]` (`text`, `target`, `title`); `hint.text` must stay the concatenation of the part texts
+  (fixtures, hover and the diagnostic command rely on it).
+- `always` means *always* — nothing is hidden because of `#if` state. Inactive code is handled by
+  `skipInactiveBrackets` (matching), `skipInactiveDirectives` (hiding) and `markInactive` (the `(inactive)` marker).
+  The evaluator is conservative: unknown conditions never mark anything inactive.
+- Range text is `:start-end` with a colon on purpose (`#1-3` collided visually with directives).
+
+## Gotchas
+
+- **Localization is not optional.** Runtime strings need an entry in `l10n/bundle.l10n.{zh-cn,ja}.json` used via
+  `vscode.l10n.t`; settings need a key in `package.nls.json`, `package.nls.zh-cn.json` and `package.nls.ja.json`
+  while `package.json` references it as `%key%`. Missing entries fall back to English silently, so
+  `test/unit/localization.test.ts` fails on any drift — including `vscode.l10n.t` calls that are not string
+  literals (a computed message cannot be extracted).
+- **A new setting touches 6+ files**: `package.json`, the three `package.nls*.json`, `src/core/settings.ts`,
+  `test/unit/config.test.ts`, `test/integration/settings.test.ts` (plus README).
+- **Integration tests restore settings by writing defaults**, never `update(key, undefined)` — removal proved
+  unreliable and left `shigan.enable: false` behind, silently emptying every later test. Copy the `BASELINE` pattern
+  in `test/integration/settings.test.ts`.
+- `settings.test.ts` generates `test/integration/workspace/fixture/compile_commands.json` at runtime (its `directory`
+  must be absolute) and deletes it in `suiteTeardown`; workspace settings land in `test/integration/workspace/.vscode/`
+  (both gitignored).
+- `shigan.internal.computedHints` is an undocumented diagnostic command the integration tests depend on;
+  `shigan.jumpToMatch` is invoked from inlay-hint parts and is intentionally not in `contributes.commands`.
+- vsce rejects a non-ASCII `publisher` (identifier only) — the human name lives in `author`. Packaging passes
+  `--no-dependencies`: everything is bundled into `dist/`, so vsce's `npm`-based dependency detection is skipped.
+
+## Tests
+
+- `test/unit/**` — vitest, pure logic. `test/unit/support.ts` exposes `predicates(text, seed)` mirroring the
+  extension's evaluation; use it for anything involving `#if`.
+- `test/fixtures/{brackets,macros}/*.c` + `.expected.json` golden files; a macro fixture may add `<case>.macros.json`
+  to seed macros. Verify expectations by hand or with `bun run inspect` — never blind-snapshot.
+- `test/integration/**` runs in a real VSCode; `.vscode-test.mjs` globs `out/integration/**/*.test.js`, built from
+  `test/integration/*.test.ts`.
+- `vscode.executeInlayHintProvider` works in the test host: `extension.test.ts` uses it to assert the real provider
+  output (label parts and tooltips), which the diagnostic command alone cannot cover.
+- `test/manual/**` is only for F5 self-testing.

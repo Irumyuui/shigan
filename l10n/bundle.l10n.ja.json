@@ -1,0 +1,13 @@
+{
+  "Jump to match": "対応箇所へジャンプ",
+  "jump target": "ジャンプ先",
+  "— line {0}": "— {0} 行目",
+  "(inactive)": "（無効）",
+  "bracket": "括弧",
+  "preprocessor": "プリプロセッサ指令",
+  "Shigan: could not jump to the match ({0})": "Shigan：対応箇所へジャンプできませんでした（{0}）",
+  "Shigan {0} is installed. If the hints do not appear, reload the window.": "Shigan {0} をインストールしました。ヒントが表示されない場合はウィンドウを再読み込みしてください。",
+  "Shigan was updated to {0}. Reload the window to apply the new version.": "Shigan が {0} に更新されました。新しいバージョンを反映するにはウィンドウを再読み込みしてください。",
+  "Reload Window": "ウィンドウを再読み込み",
+  "Later": "後で"
+}

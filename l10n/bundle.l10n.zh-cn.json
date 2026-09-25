@@ -1,0 +1,13 @@
+{
+  "Jump to match": "跳转到配对处",
+  "jump target": "跳转目标",
+  "— line {0}": "— 第 {0} 行",
+  "(inactive)": "（非激活）",
+  "bracket": "括号",
+  "preprocessor": "预处理指令",
+  "Shigan: could not jump to the match ({0})": "Shigan：无法跳转到配对处（{0}）",
+  "Shigan {0} is installed. If the hints do not appear, reload the window.": "Shigan {0} 已安装。如果提示没有出现，请重新加载窗口。",
+  "Shigan was updated to {0}. Reload the window to apply the new version.": "Shigan 已更新到 {0}。请重新加载窗口以应用新版本。",
+  "Reload Window": "重新加载窗口",
+  "Later": "稍后"
+}

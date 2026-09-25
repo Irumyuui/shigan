@@ -1,0 +1,10 @@
+[
+  { "line": 5, "text": " <- :3-6 struct point", "kind": "bracket", "openLine": 2, "closeLine": 5 },
+  { "line": 12, "text": " <- :10-13 static const int table[] =", "kind": "bracket", "openLine": 9, "closeLine": 12 },
+  { "line": 20, "text": " <- :19-21 if (i % 2 == 1)", "kind": "bracket", "openLine": 18, "closeLine": 20 },
+  { "line": 24, "text": " <- :23-25 else", "kind": "bracket", "openLine": 22, "closeLine": 24 },
+  { "line": 25, "text": " <- :18-26 for (int i = 0; i < n; ++i)", "kind": "bracket", "openLine": 17, "closeLine": 25 },
+  { "line": 27, "text": " <- :16-28 int compute(int n)", "kind": "bracket", "openLine": 15, "closeLine": 27 },
+  { "line": 34, "text": " <- :33-35 printf", "kind": "bracket", "openLine": 32, "closeLine": 34 },
+  { "line": 36, "text": " <- :31-37 int main(void)", "kind": "bracket", "openLine": 30, "closeLine": 36 }
+]
