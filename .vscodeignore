@@ -1,5 +1,7 @@
 .vscode/**
 .vscode-test/**
+.github/**
+.omo/**
 src/**
 test/**
 out/**
