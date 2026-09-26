@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.2] - 2026-09-26
+
+### Changed
+
+- README: added a ready-to-paste "Basic settings" example.
+
+### Internal
+
+- Releases are now changelog-driven: `CHANGELOG.md` is the source of truth, `just release <version>` bumps the version and creates the tag, and the release workflow publishes the matching section as the GitHub Release notes.
+
 ## [0.0.1] - 2026-09-26
 
 ### Added
@@ -19,5 +29,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Settings for the trigger mode, active languages, hint ranges, labels and macro sources.
 - English, Simplified Chinese and Japanese UI localization.
 
-[Unreleased]: https://github.com/Irumyuui/shigan/compare/v0.0.1...HEAD
+[Unreleased]: https://github.com/Irumyuui/shigan/compare/v0.0.2...HEAD
+[0.0.2]: https://github.com/Irumyuui/shigan/releases/tag/v0.0.2
 [0.0.1]: https://github.com/Irumyuui/shigan/releases/tag/v0.0.1
