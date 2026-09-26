@@ -136,7 +136,8 @@
     "clean": "node scripts/clean.mjs",
     "package": "node scripts/package.mjs",
     "package:min": "node scripts/package.mjs --minify",
-    "install:vsix": "node scripts/package.mjs --install"
+    "install:vsix": "node scripts/package.mjs --install",
+    "release": "bun run scripts/release.ts"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",

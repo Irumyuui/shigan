@@ -34,6 +34,8 @@ jobs:
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.2
+      - name: Check CHANGELOG entry
+        run: bun run scripts/changelog.ts check "$GITHUB_REF_NAME"
       - name: Install just
         run: |
           curl --proto '=https' --tlsv1.2 -sSfL -o /tmp/just.tar.gz \
@@ -98,7 +100,9 @@ jobs:
         run: bun install --frozen-lockfile
       - name: Package
         run: just package
+      - name: Extract release notes
+        run: bun run scripts/changelog.ts extract "$GITHUB_REF_NAME" --out "$RUNNER_TEMP/release-notes.md"
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" artifacts/*.vsix --title "$GITHUB_REF_NAME" --generate-notes --verify-tag
+        run: gh release create "$GITHUB_REF_NAME" artifacts/*.vsix --title "$GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/release-notes.md" --verify-tag

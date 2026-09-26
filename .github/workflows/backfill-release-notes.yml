@@ -1,0 +1,38 @@
+name: Backfill release notes
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to refresh (e.g. v0.0.1)
+        required: true
+        type: string
+
+concurrency:
+  group: backfill-notes-${{ inputs.tag }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  backfill:
+    name: Refresh release notes from CHANGELOG.md
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - name: Refresh release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          bun run scripts/changelog.ts extract "$TAG" --out "$RUNNER_TEMP/release-notes.md"
+          gh release edit "$TAG" --notes-file "$RUNNER_TEMP/release-notes.md"

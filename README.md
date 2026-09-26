@@ -107,12 +107,13 @@ just test              # typecheck + unit tests    (just ci adds integration)
 just package           # -> artifacts/shigan-<version>.vsix
 just package-min       # -> artifacts/shigan-<version>-min.vsix
 just install           # package, then `code --install-extension`
+just release 0.1.0     # changelog entry -> bump, commit, tag
 just clean             # remove dist/, out/, artifacts/
 ```
 
 CI (`.github/workflows/ci.yml`) runs the same recipes on every branch push and pull request: typecheck + unit tests, integration tests under `xvfb-run` on a clean Ubuntu runner, then `just package` and attaches the VSIX to the run.
 
-Releases are tag-driven: bump the version in `package.json`, then push a matching tag (`git tag v0.0.1 && git push origin v0.0.1`). `.github/workflows/release.yml` verifies the tag, packages the VSIX and attaches it to a GitHub Release - the tag must match the package version. Nothing is published to the marketplace.
+Releases are tag-driven and changelog-driven: add a `## [<version>]` section to `CHANGELOG.md` first, then run `just release <version>` (or bump `package.json` by hand) and push the tag. `.github/workflows/release.yml` verifies that the tag matches the package version and that `CHANGELOG.md` has a non-empty entry for it - it fails otherwise - packages the VSIX and creates a GitHub Release whose notes are that changelog section. `.github/workflows/backfill-release-notes.yml` (manual `workflow_dispatch`, input `tag`) refreshes an existing release's notes from the changelog. `CHANGELOG.md` ships inside the VSIX, so VS Code shows the changelog after an update. Nothing is published to the marketplace.
 
 Without `just`: `bun run build`, `bun run test:unit`, `bun run package`,
 `bun run package:min`, `bun run install:vsix`.

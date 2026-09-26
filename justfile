@@ -60,3 +60,7 @@ package-min:
 # Package and install the VSIX into the local VS Code
 install:
     bun run install:vsix
+
+# Bump the version, commit and tag a release (needs a CHANGELOG.md entry)
+release version:
+    bun run scripts/release.ts {{version}}

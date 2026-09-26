@@ -28,15 +28,25 @@ bunx vitest run test/unit/hints.test.ts -t "single-line"   # one test
 
 ## Releases
 
-Releasing = bump `package.json` on `main`, commit, then push a matching tag:
+`CHANGELOG.md` is the source of truth for what changed: every release needs a non-empty `## [<version>]` section
+(Keep a Changelog format) before the tag can be pushed. The pure parsing lives in `scripts/changelog-core.ts`
+(unit-tested in `test/unit/changelog.test.ts`); `scripts/changelog.ts` is the CLI that CI and tooling call.
+
+Releasing = write the changelog entry, then either `just release <version>` (validates the entry, bumps
+`package.json`, commits and creates the annotated tag locally; add `--push` to also push) or by hand: bump
+`package.json` on `main`, commit, then push a matching tag:
 
 ```sh
 git tag v0.0.1 && git push origin v0.0.1
 ```
 
-`.github/workflows/release.yml` verifies the tagged commit (same checks as CI), packages the VSIX and creates the
-GitHub Release with the `.vsix` attached (`gh release create --generate-notes`, `permissions: contents: write`).
-The tag must equal `v<package.json version>`. Marketplaces are not published. If the workflow failed before
+`.github/workflows/release.yml` verifies the tagged commit (same checks as CI) plus a non-empty `CHANGELOG.md`
+entry for the version, packages the VSIX and creates the GitHub Release with the `.vsix` attached, using that
+changelog section as the release notes (`gh release create --notes-file`, `permissions: contents: write`).
+The tag must equal `v<package.json version>`. `CHANGELOG.md` ships in the VSIX, so VS Code's extension page shows
+the changelog after an update. If a release's notes are wrong, run the `Backfill release notes` workflow
+(`workflow_dispatch`, input `tag`) to refresh them from `CHANGELOG.md` - it only shows up in the Actions UI once
+the workflow is on the default branch. Marketplaces are not published. If the workflow failed before
 creating the Release, only the tag needs deleting; if a Release exists, delete it first (`gh` must be
 authenticated - otherwise delete it in the GitHub web UI):
 
