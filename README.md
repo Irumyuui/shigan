@@ -96,7 +96,9 @@ just install           # package, then `code --install-extension`
 just clean             # remove dist/, out/, artifacts/
 ```
 
-CI (`.github/workflows/ci.yml`) runs the same recipes on every push and pull request: typecheck + unit tests, integration tests under `xvfb-run` on a clean Ubuntu runner, then `just package` and attaches the VSIX to the run.
+CI (`.github/workflows/ci.yml`) runs the same recipes on every branch push and pull request: typecheck + unit tests, integration tests under `xvfb-run` on a clean Ubuntu runner, then `just package` and attaches the VSIX to the run.
+
+Releases are tag-driven: bump the version in `package.json`, then push a matching tag (`git tag v0.0.1 && git push origin v0.0.1`). `.github/workflows/release.yml` verifies the tag, packages the VSIX and attaches it to a GitHub Release - the tag must match the package version. Nothing is published to the marketplace.
 
 Without `just`: `bun run build`, `bun run test:unit`, `bun run package`,
 `bun run package:min`, `bun run install:vsix`.

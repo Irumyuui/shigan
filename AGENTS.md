@@ -24,7 +24,27 @@ bunx vitest run test/unit/hints.test.ts -t "single-line"   # one test
 - **Fastest way to see behaviour**: `bun run inspect <file.c> [always|cursor]` prints every hint with its text,
   `(inactive)` marker and per-segment jump targets. It honours `<file>.macros.json` seeds like the fixture harness.
 - Manual check: F5 (`.vscode/launch.json`) + `test/manual/sample.c` + `CHECKLIST.md`.
-- CI: `.github/workflows/ci.yml` runs `just typecheck test-unit` and `xvfb-run --auto-servernum just test-integration` on ubuntu-latest for every push/PR, then `just package` and uploads the VSIX artifact. CI installs pinned just 1.58.0 in BOTH jobs; bump `JUST_VERSION` and `JUST_SHA256` together when upgrading, and keep the two install steps identical.
+- CI: `.github/workflows/ci.yml` runs `just typecheck test-unit` and `xvfb-run --auto-servernum just test-integration` on ubuntu-latest for every branch push/PR, then `just package` and uploads the VSIX artifact. CI installs pinned just 1.58.0 in BOTH jobs; bump `JUST_VERSION` and `JUST_SHA256` together when upgrading, and keep the two install steps identical. Tag pushes are excluded (`branches: ['**'] filter`) - releasing is handled by `.github/workflows/release.yml` (see Releases).
+
+## Releases
+
+Releasing = bump `package.json` on `main`, commit, then push a matching tag:
+
+```sh
+git tag v0.0.1 && git push origin v0.0.1
+```
+
+`.github/workflows/release.yml` verifies the tagged commit (same checks as CI), packages the VSIX and creates the
+GitHub Release with the `.vsix` attached (`gh release create --generate-notes`, `permissions: contents: write`).
+The tag must equal `v<package.json version>`. Marketplaces are not published. If the workflow failed before
+creating the Release, only the tag needs deleting; if a Release exists, delete it first (`gh` must be
+authenticated - otherwise delete it in the GitHub web UI):
+
+```sh
+gh release delete v0.0.1 --yes
+git push --delete origin v0.0.1
+git tag -d v0.0.1
+```
 
 ## Architecture
 
