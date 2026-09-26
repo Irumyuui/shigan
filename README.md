@@ -71,6 +71,20 @@ they follow `editor.inlayHints.enabled` — there is no colour/opacity setting.
 `${workspaceFolder}`, `${fileDirname}` and `${env:NAME}` are expanded inside
 `shigan.compileFlags`.
 
+Basic settings:
+
+```json
+{
+  "shigan.trigger": "always",
+  "shigan.inheritCompileCommands": true,
+  "shigan.showRange": true,
+  "telemetry.feedback.enabled": false,
+  "shigan.showLabel": true,
+  "shigan.showRangeThreshold": 0,
+  "shigan.preprocessor.skipInactiveDirectives": false
+}
+```
+
 ## Known limitations
 
 - Brackets produced by macro expansion (`#define OPEN {` then `OPEN`) cannot be
