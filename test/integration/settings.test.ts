@@ -220,6 +220,10 @@ function configuration(): vscode.WorkspaceConfiguration {
 async function applyBaseline(): Promise<void> {
   const config = configuration();
   for (const [key, value] of Object.entries(BASELINE)) {
+    // The extension reads the effective value, so an already-matching setting
+    // needs no write. Skipping the no-ops avoids ~13 sequential disk writes
+    // (each firing a config-change event) on every run and on every teardown.
+    if (JSON.stringify(config.get(key)) === JSON.stringify(value)) continue;
     await config.update(key, value, vscode.ConfigurationTarget.Workspace);
   }
   await delay(150);
