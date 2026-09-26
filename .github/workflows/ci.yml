@@ -1,7 +1,9 @@
 name: CI
 
 on:
+  # Tags are handled by release.yml; CI runs for branches only.
   push:
+    branches: ['**']
   pull_request:
   workflow_dispatch:
 
