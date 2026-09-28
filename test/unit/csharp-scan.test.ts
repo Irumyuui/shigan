@@ -132,6 +132,29 @@ describe('tokenizer C# literals', () => {
     expect(bracketChars(text)).toBe('(){}');
   });
 
+  it('consumes through the closing quote when a line comment swallows the hole line', () => {
+    // The `// }` comment hides the hole's `}`, but the literal still closes on
+    // the continuation line. The hole scanner must reach that quote (rather
+    // than treating the newline as the end) so `+ y }";` leaves no `}` leak
+    // and the true closing brace on line 5 keeps its pair.
+    const text = 'class C {\n  void M() {\n    var s = $"{ x // }\n   + y }";\n  }\n}\n';
+    expect(bracketChars(text)).toBe('{(){}}');
+    expect(scan(text, CSHARP).brackets.map((b) => b.line)).toEqual([0, 1, 1, 1, 4, 5]);
+  });
+
+  it('stops an unterminated block comment in a non-verbatim hole at the line end', () => {
+    // An unterminated `/*` used to make the hole consume the whole document;
+    // it must stay line-scoped so the function below keeps its pair.
+    const text = 'var s = $"{ x /* oops\nvoid f() {\n    g();\n}\n';
+    expect(bracketChars(text)).toBe('(){()}');
+    expect(scan(text, CSHARP).brackets.map((b) => b.line)).toEqual([1, 1, 1, 2, 2, 3]);
+  });
+
+  it('keeps a terminated block comment inside a non-verbatim hole opaque', () => {
+    // A closed `/* ... */` is still skipped in full, braces and all.
+    expect(bracketChars('var s = $"{ /* } { */ x }"; }')).toBe('}');
+  });
+
   it('consumes an unterminated hole in a verbatim interpolated literal to EOF', () => {
     // A verbatim interpolated literal may span lines, so it stays conservative
     // and swallows the rest of the document rather than guessing.

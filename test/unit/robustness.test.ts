@@ -84,6 +84,24 @@ describe('robustness', () => {
     expect(() => computeHints(text, { ...BRACKETS, scanned })).not.toThrow();
   });
 
+  it('keeps the brace hint after a line comment swallowed an interpolation hole', () => {
+    // A `//` in the hole runs to the line end; the literal still closes on the
+    // next line. The genuine `}` of `void M` on line 4 must keep its pair.
+    const text = 'class C {\n  void M() {\n    var s = $"{ x // }\n   + y }";\n  }\n}\n';
+    const scanned = scan(text, CSHARP);
+    const hints = computeHints(text, { ...BRACKETS, scanned });
+    expect(hints.map((h) => h.line)).toEqual([4, 5]);
+    expect(hints[0].text).toContain(':2-5');
+    expect(hints[1].text).toContain(':1-6');
+  });
+
+  it('keeps the function pair after an unterminated block comment in a hole', () => {
+    const text = 'var s = $"{ x /* oops\nvoid f() {\n    g();\n}\n';
+    const scanned = scan(text, CSHARP);
+    const hints = computeHints(text, { ...BRACKETS, scanned });
+    expect(hints.map((h) => h.line)).toEqual([3]);
+  });
+
   it('ignores stray branch and endif directives', () => {
     expect(computeHints('#endif\n#else\nint f(void) {\n}\n', {
       brackets: false,

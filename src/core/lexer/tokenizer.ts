@@ -85,6 +85,28 @@ export function scan(text: string, syntax: LanguageSyntax = C_SYNTAX): ScanResul
   };
 
   /**
+   * Index just past the first unescaped `"` at or after `k` under non-verbatim
+   * escape rules, or -1 when the rest of the document has none. Backslash
+   * escapes and `\`+newline splices are respected; newlines do not stop the
+   * walk because a hole's comment may have swallowed the remainder of the line
+   * while the literal's closing quote still lies on a later one.
+   */
+  const findClosingQuote = (k: number): number => {
+    let j = k;
+    while (j < n) {
+      const ch = text[j];
+      if (ch === '\\') {
+        const cont = skipSplice(j);
+        j = cont >= 0 ? cont : j + 2;
+        continue;
+      }
+      if (ch === '"') return j + 1;
+      j++;
+    }
+    return -1;
+  };
+
+  /**
    * End index (exclusive) of the `//` comment starting at `k`. A line comment
    * runs to the end of the logical line, so backslash-newline continuations are
    * followed.
@@ -174,13 +196,18 @@ export function scan(text: string, syntax: LanguageSyntax = C_SYNTAX): ScanResul
    * Consumes balanced `{`/`}` while skipping nested literals and comments, so
    * brackets inside the hole never leak as ordinary code.
    *
-   * A non-verbatim literal cannot span lines, so an unterminated hole stops at
-   * the first unescaped newline (`\`+newline splices do not count) and later
-   * code keeps its brackets. A verbatim literal may span lines, so its
-   * unterminated hole consumes the rest of the document. `depth` bounds the
-   * mutual recursion with `skipInterpolated`/`skipNestedLiteral`; at the cap the
-   * hole is consumed conservatively (line-scoped for non-verbatim, EOF for
-   * verbatim) instead of recursing further, so `scan` never throws.
+   * A non-verbatim literal cannot span lines, so an unterminated hole normally
+   * stops at the first unescaped newline (`\`+newline splices do not count) and
+   * later code keeps its brackets. A `//` comment inside the hole, though, runs
+   * to the end of the physical line, so the hole can reach that newline with the
+   * literal's closing quote still ahead: in that case the whole literal is
+   * consumed through the quote (the pre-`cbc7ecf` behaviour) by returning its
+   * negated end. An unterminated block comment is likewise line-scoped. A
+   * verbatim literal may span lines, so its unterminated hole consumes the rest
+   * of the document. `depth` bounds the mutual recursion with
+   * `skipInterpolated`/`skipNestedLiteral`; at the cap the hole is consumed
+   * conservatively (line-scoped for non-verbatim, EOF for verbatim) instead of
+   * recursing further, so `scan` never throws.
    */
   const skipInterpolationHole = (k: number, verbatim: boolean, depth: number): number => {
     if (depth >= MAX_LITERAL_DEPTH) {
@@ -196,7 +223,14 @@ export function scan(text: string, syntax: LanguageSyntax = C_SYNTAX): ScanResul
         continue;
       }
       if (ch === '\n') {
-        if (!verbatim) return j;
+        if (!verbatim) {
+          // The literal cannot span lines, but the closing quote may still be
+          // ahead when a `//` comment swallowed the rest of the line. Consume
+          // the literal through that quote (a negative end); otherwise stay
+          // line-scoped so following code keeps its brackets.
+          const close = findClosingQuote(j);
+          return close >= 0 ? -close : j;
+        }
         j++;
         continue;
       }
@@ -221,6 +255,12 @@ export function scan(text: string, syntax: LanguageSyntax = C_SYNTAX): ScanResul
         continue;
       }
       if (ch === '/' && text[j + 1] === '*') {
+        if (!verbatim && text.indexOf('*/', j + 2) < 0) {
+          // Unterminated block comment: a non-verbatim literal cannot span
+          // lines, so stop at this line's end instead of swallowing the rest
+          // of the document.
+          return lineLimit(j);
+        }
         j = skipBlockComment(j, syntax);
         continue;
       }
@@ -235,9 +275,10 @@ export function scan(text: string, syntax: LanguageSyntax = C_SYNTAX): ScanResul
    * doubling over backslash escapes. A `{` that is not `{{` opens an
    * interpolation hole consumed by `skipInterpolationHole`; `{{` and `}}` are
    * literal escapes. An unterminated non-verbatim literal stops at the next
-   * unescaped newline (including when the unterminated part is a hole), a
-   * verbatim one consumes the rest of the document. `depth` bounds the hole
-   * recursion.
+   * unescaped newline, unless an unterminated hole reports that the closing
+   * quote still lies ahead (see `skipInterpolationHole`), in which case it is
+   * consumed through that quote; a verbatim literal consumes the rest of the
+   * document. `depth` bounds the hole recursion.
    */
   const skipInterpolated = (quotePos: number, verbatim: boolean, depth: number): number => {
     let j = quotePos + 1;
@@ -265,7 +306,11 @@ export function scan(text: string, syntax: LanguageSyntax = C_SYNTAX): ScanResul
           j += 2;
           continue;
         }
-        j = skipInterpolationHole(j, verbatim, depth);
+        const holeEnd = skipInterpolationHole(j, verbatim, depth);
+        // A negative end means the hole reached a newline but the literal's
+        // closing quote still lay ahead: the whole literal ends there.
+        if (holeEnd < 0) return -holeEnd;
+        j = holeEnd;
         continue;
       }
       if (ch === '}' && text[j + 1] === '}') {
