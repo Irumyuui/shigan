@@ -33,6 +33,9 @@
     "onLanguage:rust"
   ],
   "main": "./dist/extension.js",
+  "extensionKind": [
+    "workspace"
+  ],
   "contributes": {
     "configuration": {
       "title": "%configuration.title%",
