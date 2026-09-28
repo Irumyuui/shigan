@@ -64,9 +64,10 @@ const NETFRAMEWORK_VERSIONS = [
  * @param options Property overrides; see {@link CsprojOptions}.
  */
 export function parseDefineConstants(xml: string, options: CsprojOptions = {}): CsprojResult {
+  const source = stripXmlComments(xml);
   const configuration = options.configuration ?? 'Debug';
   const platform = options.platform ?? 'AnyCPU';
-  const targetFramework = options.targetFramework ?? findTargetFramework(xml);
+  const targetFramework = options.targetFramework ?? findTargetFramework(source);
 
   const symbols = new Set<string>();
   if (options.initialSymbols) {
@@ -92,7 +93,7 @@ export function parseDefineConstants(xml: string, options: CsprojOptions = {}): 
 
   let match: RegExpExecArray | null;
   TAG_RE.lastIndex = 0;
-  while ((match = TAG_RE.exec(xml)) !== null) {
+  while ((match = TAG_RE.exec(source)) !== null) {
     const closing = match[1] === '/';
     const name = match[2];
     const attributes = match[3];
@@ -107,10 +108,10 @@ export function parseDefineConstants(xml: string, options: CsprojOptions = {}): 
     if (name !== 'DefineConstants' || closing || selfClosing) continue;
 
     DEFINE_CONSTANTS_CLOSE_RE.lastIndex = TAG_RE.lastIndex;
-    const close = DEFINE_CONSTANTS_CLOSE_RE.exec(xml);
+    const close = DEFINE_CONSTANTS_CLOSE_RE.exec(source);
     const rawValue = close
-      ? xml.slice(TAG_RE.lastIndex, close.index)
-      : xml.slice(TAG_RE.lastIndex);
+      ? source.slice(TAG_RE.lastIndex, close.index)
+      : source.slice(TAG_RE.lastIndex);
     if (close) TAG_RE.lastIndex = DEFINE_CONSTANTS_CLOSE_RE.lastIndex;
 
     const groupOk = groupConditions.every((condition) =>
@@ -190,6 +191,17 @@ export function frameworkSymbols(targetFramework: string): string[] {
   return [];
 }
 
+/**
+ * Removes XML comments before scanning. Comments do not nest and end at the
+ * first `-->`; a dangling opener with no closer drops the remainder of the
+ * input, so a commented-out tag can never be mistaken for a real one.
+ */
+function stripXmlComments(xml: string): string {
+  const closed = xml.replace(/<!--[\s\S]*?-->/g, '');
+  const dangling = closed.indexOf('<!--');
+  return dangling < 0 ? closed : closed.slice(0, dangling);
+}
+
 /** Resolves the project's target framework, preferring `<TargetFramework>`. */
 function findTargetFramework(xml: string): string | undefined {
   const single = TARGET_FRAMEWORK_RE.exec(xml);
@@ -255,6 +267,10 @@ function expandVariables(
     }
     return value;
   });
+  // Property functions (`$([MSBuild]::Foo())`) contain nested parentheses and
+  // are not matched above; any leftover `$(` means something stayed unresolved,
+  // which callers treat conservatively (include the branch).
+  if (expanded.includes('$(')) unresolved = true;
   return { text: expanded, unresolved };
 }
 

@@ -202,6 +202,101 @@ describe('parseDefineConstants', () => {
 
     expect(symbols(xml)).toEqual([]);
   });
+
+  it('ignores a commented-out <DefineConstants> but keeps the live one', () => {
+    const xml = `
+      <Project>
+        <PropertyGroup>
+          <!-- <DefineConstants>OLD</DefineConstants> -->
+          <DefineConstants>LIVE</DefineConstants>
+        </PropertyGroup>
+      </Project>`;
+
+    expect(symbols(xml)).toEqual(['LIVE']);
+  });
+
+  it('ignores a commented-out <TargetFramework>', () => {
+    const commented = `
+      <Project>
+        <PropertyGroup>
+          <!-- <TargetFramework>net48</TargetFramework> -->
+        </PropertyGroup>
+      </Project>`;
+    const withLive = `
+      <Project>
+        <PropertyGroup>
+          <!-- <TargetFramework>net48</TargetFramework> -->
+          <TargetFramework>net8.0</TargetFramework>
+        </PropertyGroup>
+      </Project>`;
+
+    expect(parseDefineConstants(commented).targetFramework).toBeUndefined();
+    expect(parseDefineConstants(withLive).targetFramework).toBe('net8.0');
+  });
+
+  it('strips multi-line comments entirely', () => {
+    const xml = `
+      <Project>
+        <PropertyGroup>
+          <!--
+            <DefineConstants>HIDDEN</DefineConstants>
+            <TargetFramework>net48</TargetFramework>
+          -->
+          <DefineConstants>VISIBLE</DefineConstants>
+        </PropertyGroup>
+      </Project>`;
+
+    expect(symbols(xml)).toEqual(['VISIBLE']);
+    expect(parseDefineConstants(xml).targetFramework).toBeUndefined();
+  });
+
+  it('expands $(TargetFramework) inside a DefineConstants value', () => {
+    const xml = `
+      <Project>
+        <PropertyGroup>
+          <DefineConstants>TFM_$(TargetFramework)</DefineConstants>
+        </PropertyGroup>
+      </Project>`;
+
+    expect(symbols(xml, { targetFramework: 'Custom' })).toEqual(['TFM_Custom']);
+    // With no resolved framework it stays unexpanded and is dropped.
+    expect(symbols(xml)).toEqual([]);
+  });
+
+  it('evaluates the classic Configuration|Platform condition', () => {
+    const xml = `
+      <Project>
+        <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
+          <DefineConstants>DESKTOP</DefineConstants>
+        </PropertyGroup>
+      </Project>`;
+
+    expect(symbols(xml)).toEqual(['DESKTOP']);
+    expect(symbols(xml, { platform: 'x64' })).toEqual([]);
+  });
+
+  it('uses the first <TargetFramework> when several exist', () => {
+    const xml = `
+      <Project>
+        <PropertyGroup>
+          <TargetFramework>net8.0</TargetFramework>
+          <TargetFramework>net48</TargetFramework>
+        </PropertyGroup>
+      </Project>`;
+
+    expect(parseDefineConstants(xml).targetFramework).toBe('net8.0');
+  });
+
+  it('conservatively includes conditions with a property function', () => {
+    const xml = `
+      <Project>
+        <PropertyGroup Condition="'$([MSBuild]::GetTargetFrameworkIdentifier())'=='x'">
+          <DefineConstants>FUNCTION_CONDITION</DefineConstants>
+        </PropertyGroup>
+      </Project>`;
+
+    expect(symbols(xml)).toEqual(['FUNCTION_CONDITION']);
+  });
 });
 
 describe('frameworkSymbols', () => {
