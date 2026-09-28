@@ -7,11 +7,13 @@ import { versionChange } from './version';
 
 const REFRESH_DELAY_MS = 60;
 const VERSION_STATE_KEY = 'shigan.activatedVersion';
+/** Project files whose changes can alter conditional evaluation. */
+const PROJECT_GLOBS = ['**/*.csproj', '**/Cargo.toml'];
 
 let config: ShiganConfig;
 let refreshTimer: ReturnType<typeof setTimeout> | undefined;
 let projectTimer: ReturnType<typeof setTimeout> | undefined;
-let csprojWatchers: vscode.FileSystemWatcher[] = [];
+let projectWatchers: vscode.FileSystemWatcher[] = [];
 let inlayHints: ShiganInlayHintsProvider | undefined;
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -45,15 +47,17 @@ export function activate(context: vscode.ExtensionContext): void {
     }, REFRESH_DELAY_MS);
   };
 
-  const watchCsprojFiles = (): void => {
+  const watchProjectFiles = (): void => {
     for (const folder of vscode.workspace.workspaceFolders ?? []) {
-      const watcher = vscode.workspace.createFileSystemWatcher(
-        new vscode.RelativePattern(folder, '**/*.csproj')
-      );
-      watcher.onDidCreate(scheduleProjectRefresh);
-      watcher.onDidChange(scheduleProjectRefresh);
-      watcher.onDidDelete(scheduleProjectRefresh);
-      csprojWatchers.push(watcher);
+      for (const glob of PROJECT_GLOBS) {
+        const watcher = vscode.workspace.createFileSystemWatcher(
+          new vscode.RelativePattern(folder, glob)
+        );
+        watcher.onDidCreate(scheduleProjectRefresh);
+        watcher.onDidChange(scheduleProjectRefresh);
+        watcher.onDidDelete(scheduleProjectRefresh);
+        projectWatchers.push(watcher);
+      }
     }
   };
 
@@ -72,12 +76,12 @@ export function activate(context: vscode.ExtensionContext): void {
       refresh();
     }),
     vscode.workspace.onDidChangeWorkspaceFolders(() => {
-      disposeCsprojWatchers();
-      watchCsprojFiles();
+      disposeProjectWatchers();
+      watchProjectFiles();
       invalidate();
       refresh();
     }),
-    new vscode.Disposable(disposeCsprojWatchers),
+    new vscode.Disposable(disposeProjectWatchers),
     new vscode.Disposable(() => {
       if (refreshTimer) clearTimeout(refreshTimer);
       refreshTimer = undefined;
@@ -86,7 +90,7 @@ export function activate(context: vscode.ExtensionContext): void {
     })
   );
 
-  watchCsprojFiles();
+  watchProjectFiles();
 
   // Ask for hints right away, so editors that were already open when the
   // extension was installed get their hints without a window reload.
@@ -94,10 +98,10 @@ export function activate(context: vscode.ExtensionContext): void {
   void announceVersionChange(context);
 }
 
-/** Disposes every csproj watcher and clears the list. Safe to call repeatedly. */
-function disposeCsprojWatchers(): void {
-  for (const watcher of csprojWatchers) watcher.dispose();
-  csprojWatchers = [];
+/** Disposes every project-file watcher and clears the list. Safe to call repeatedly. */
+function disposeProjectWatchers(): void {
+  for (const watcher of projectWatchers) watcher.dispose();
+  projectWatchers = [];
 }
 
 export function deactivate(): void {
@@ -105,7 +109,7 @@ export function deactivate(): void {
   refreshTimer = undefined;
   if (projectTimer) clearTimeout(projectTimer);
   projectTimer = undefined;
-  disposeCsprojWatchers();
+  disposeProjectWatchers();
 
   // Unregistering the provider drops its inlay hints immediately, so nothing
   // lingers when the extension is disabled or the window is reloaded.

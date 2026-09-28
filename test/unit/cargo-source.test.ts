@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { clearCargoCache, findCargoFeatures } from '../../src/cargo-source';
+import { clearCargoCache, findCargoFeatures, hasAncestorManifest } from '../../src/cargo-source';
 
 const tempRoots: string[] = [];
 
@@ -108,5 +108,26 @@ describe('findCargoFeatures', () => {
 
     expect(findCargoFeatures(file)).toBeUndefined();
     expect(findCargoFeatures(file)).toBeUndefined();
+  });
+});
+
+describe('hasAncestorManifest', () => {
+  it('is true when a parent directory also has a Cargo.toml', () => {
+    const root = makeTempDir();
+    write(path.join(root, 'Cargo.toml'), ['[workspace]', 'members = ["member"]'].join('\n'));
+    write(path.join(root, 'member', 'Cargo.toml'), manifest('member_feature'));
+    const file = path.join(root, 'member', 'src', 'main.rs');
+    write(file, '');
+
+    expect(hasAncestorManifest(file)).toBe(true);
+  });
+
+  it('is false when only the nearest manifest exists', () => {
+    const root = makeTempDir();
+    write(path.join(root, 'Cargo.toml'), manifest('only_feature'));
+    const file = path.join(root, 'src', 'main.rs');
+    write(file, '');
+
+    expect(hasAncestorManifest(file)).toBe(false);
   });
 });

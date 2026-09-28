@@ -3,10 +3,14 @@ import { createVariableResolver, ShiganConfig } from './config';
 import { mergeCSharpMacros } from './core/csharp';
 import { parseCompileFlags } from './core/flags';
 import { computeHints } from './core/hints';
-import { LanguageSyntax, syntaxFor } from './core/language';
+import { languageKind, LanguageSyntax, syntaxFor } from './core/language';
+import { scanRust } from './core/lexer/rust';
 import { scan } from './core/lexer/tokenizer';
 import { evaluateConditionals } from './core/match/c-preprocessor';
+import { hostCfg, parseRustCfgEntries, RustCfgEnvironment } from './core/match/rust/cfg';
+import { rustConditionals } from './core/match/rust/conditionals';
 import { Hint, MacroDef, Trigger } from './core/types';
+import { clearCargoCache, findCargoFeatures, hasAncestorManifest } from './cargo-source';
 import { clearCsprojCache, findCsprojSymbols } from './csproj-source';
 import { clearCompileCommandCache, findCompileCommandFlags } from './flags-source';
 
@@ -37,17 +41,20 @@ export function invalidate(): void {
   hintCache.clear();
   clearCompileCommandCache();
   clearCsprojCache();
+  clearCargoCache();
 }
 
 /**
- * Drops the project-file caches (C# csproj symbols) without touching the
- * compile_commands cache. Used when a csproj changes on disk.
+ * Drops the project-file caches (C# csproj symbols, Rust Cargo features)
+ * without touching the compile_commands cache. Used when a project file
+ * changes on disk.
  */
 export function invalidateProjectFiles(): void {
   generation++;
   macroCache.clear();
   hintCache.clear();
   clearCsprojCache();
+  clearCargoCache();
 }
 
 /**
@@ -78,31 +85,56 @@ export function computeDocumentHints(
   }
 
   const text = document.getText();
-  const syntax = syntaxFor(document.languageId);
-  const scanned = scan(text, syntax);
-  const macros = documentMacros(document, config, syntax);
-  const evaluation = evaluateConditionals(scanned.directives, {
-    macros,
-    trackFileDefines: config.trackFileDefines,
-    syntax,
-  });
 
-  const hints = computeHints(text, {
-    brackets: config.show.includes('brackets'),
-    macros: config.show.includes('macros'),
-    trigger,
-    cursorOffset,
-    showRange: config.showRange,
-    rangeHideThreshold: config.rangeHideThreshold,
-    showLabel: config.showLabel,
-    inactive: (line) => evaluation.inactiveLines.has(line),
-    branchActive: (line) => evaluation.branchActive.get(line),
-    blockActive: (line) => evaluation.blockActive.get(line),
-    skipInactiveBrackets: config.skipInactiveBrackets,
-    skipInactiveDirectives: config.skipInactiveDirectives,
-    markInactive: config.markInactive,
-    scanned,
-  });
+  let hints: Hint[];
+  if (languageKind(document.languageId) === 'rust') {
+    const scanned = scanRust(text);
+    const model = rustConditionals({
+      scanned,
+      lines: text.split(/\r?\n/),
+      environment: rustEnvironment(document, config),
+    });
+    hints = computeHints(text, {
+      brackets: config.show.includes('brackets'),
+      macros: config.show.includes('macros'),
+      trigger,
+      cursorOffset,
+      showRange: config.showRange,
+      rangeHideThreshold: config.rangeHideThreshold,
+      showLabel: config.showLabel,
+      inactive: (line) => model.inactiveLines?.has(line) === true,
+      skipInactiveBrackets: config.skipInactiveBrackets,
+      skipInactiveDirectives: config.skipInactiveDirectives,
+      markInactive: config.markInactive,
+      scanned,
+      conditionals: model,
+    });
+  } else {
+    const syntax = syntaxFor(document.languageId);
+    const scanned = scan(text, syntax);
+    const macros = documentMacros(document, config, syntax);
+    const evaluation = evaluateConditionals(scanned.directives, {
+      macros,
+      trackFileDefines: config.trackFileDefines,
+      syntax,
+    });
+    hints = computeHints(text, {
+      brackets: config.show.includes('brackets'),
+      macros: config.show.includes('macros'),
+      trigger,
+      cursorOffset,
+      showRange: config.showRange,
+      rangeHideThreshold: config.rangeHideThreshold,
+      showLabel: config.showLabel,
+      inactive: (line) => evaluation.inactiveLines.has(line),
+      branchActive: (line) => evaluation.branchActive.get(line),
+      blockActive: (line) => evaluation.blockActive.get(line),
+      skipInactiveBrackets: config.skipInactiveBrackets,
+      skipInactiveDirectives: config.skipInactiveDirectives,
+      markInactive: config.markInactive,
+      scanned,
+    });
+  }
 
   hintCache.set(key, {
     version: document.version,
@@ -113,6 +145,35 @@ export function computeDocumentHints(
     hints,
   });
   return hints;
+}
+
+/**
+ * The cfg environment for a Rust document: explicit `shigan.rust.cfg` entries,
+ * the observed host platform, and (when inheriting) feature facts from the
+ * nearest Cargo.toml. Feature absence is only decidable when the manifest is a
+ * real package and no parent manifest could add features.
+ */
+function rustEnvironment(
+  document: vscode.TextDocument,
+  config: ShiganConfig
+): RustCfgEnvironment {
+  const environment: RustCfgEnvironment = {
+    explicit: parseRustCfgEntries(config.rustCfg),
+    host: hostCfg(process.platform, process.arch).predicates,
+  };
+
+  if (config.rustInheritCargo && document.uri.scheme === 'file') {
+    const cargo = findCargoFeatures(document.uri.fsPath);
+    if (cargo) {
+      environment.features = {
+        decidableAbsence: !cargo.virtual && !hasAncestorManifest(document.uri.fsPath),
+        universe: new Set([...cargo.declared, ...cargo.implicit]),
+        enabled: cargo.defaults,
+      };
+    }
+  }
+
+  return environment;
 }
 
 function documentMacros(

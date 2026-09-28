@@ -59,6 +59,36 @@ export function clearCargoCache(): void {
   cache.clear();
 }
 
+/**
+ * True when the nearest `Cargo.toml` above `filePath` itself has a further
+ * `Cargo.toml` in an ancestor directory — a conservative signal that the crate
+ * may be a workspace member (or otherwise have a parent manifest), so a feature
+ * declared only in the child cannot be treated as definitely absent.
+ */
+export function hasAncestorManifest(filePath: string): boolean {
+  const nearest = nearestManifestDir(path.resolve(filePath));
+  if (nearest === undefined) return false;
+
+  let dir = path.dirname(nearest);
+  for (;;) {
+    if (isFile(path.join(dir, MANIFEST))) return true;
+    const parent = path.dirname(dir);
+    if (parent === dir) return false;
+    dir = parent;
+  }
+}
+
+/** Nearest directory at or above the file's directory that holds a manifest. */
+function nearestManifestDir(resolvedFile: string): string | undefined {
+  let dir = path.dirname(resolvedFile);
+  for (;;) {
+    if (isFile(path.join(dir, MANIFEST))) return dir;
+    const parent = path.dirname(dir);
+    if (parent === dir) return undefined;
+    dir = parent;
+  }
+}
+
 function isFile(filePath: string): boolean {
   try {
     return fs.statSync(filePath).isFile();
