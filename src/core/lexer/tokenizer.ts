@@ -1,3 +1,4 @@
+import { C_SYNTAX, LanguageSyntax } from '../language';
 import { BracketToken, DirectiveToken, ScanResult } from '../types';
 
 const BRACKETS = new Set(['(', ')', '[', ']', '{', '}']);
@@ -16,8 +17,12 @@ const BRACKETS = new Set(['(', ')', '[', ']', '{', '}']);
  * non-whitespace character of a logical line and is not inside a comment or a
  * string. Directive lines are treated as opaque: brackets inside them are not
  * reported (macro bodies are a documented limitation).
+ *
+ * `syntax` selects the lexical profile. Only C exists today, so every profile
+ * currently scans exactly like C; the parameter is the seam the per-language
+ * helpers below will grow into.
  */
-export function scan(text: string): ScanResult {
+export function scan(text: string, syntax: LanguageSyntax = C_SYNTAX): ScanResult {
   const brackets: BracketToken[] = [];
   const directives: DirectiveToken[] = [];
   const n = text.length;
@@ -44,6 +49,55 @@ export function scan(text: string): ScanResult {
     let p = k + 1;
     if (p < n && text[p] === '\r') p++;
     return p < n && text[p] === '\n' ? p + 1 : -1;
+  };
+
+  /**
+   * End index (exclusive) of the `//` comment starting at `k`. A line comment
+   * runs to the end of the logical line, so backslash-newline continuations are
+   * followed.
+   */
+  const skipLineComment = (k: number, syntax: LanguageSyntax): number => {
+    void syntax; // C-only for now; reserved for future profiles.
+    let j = k + 2;
+    while (j < n) {
+      const cont = skipSplice(j);
+      if (cont >= 0) {
+        j = cont;
+        continue;
+      }
+      if (text[j] === '\n') break;
+      j++;
+    }
+    return j;
+  };
+
+  /** End index (exclusive) of the block comment starting at `k`. */
+  const skipBlockComment = (k: number, syntax: LanguageSyntax): number => {
+    void syntax; // C-only for now; reserved for future profiles.
+    const close = text.indexOf('*/', k + 2);
+    return close < 0 ? n : close + 2;
+  };
+
+  /**
+   * End index (exclusive) of the single- or double-quoted literal starting at
+   * `k` whose opening delimiter is `quote`. Handles backslash escapes and
+   * backslash-newline splices, and stops at an unescaped newline.
+   */
+  const skipQuoted = (k: number, quote: string, syntax: LanguageSyntax): number => {
+    void syntax; // rawStrings/csharpLiterals are inert until implemented.
+    let j = k + 1;
+    while (j < n) {
+      const ch = text[j];
+      if (ch === '\\') {
+        const cont = skipSplice(j);
+        j = cont >= 0 ? cont : j + 2;
+        continue;
+      }
+      if (ch === '\n') break;
+      j++;
+      if (ch === quote) break;
+    }
+    return j;
   };
 
   while (i < n) {
@@ -102,41 +156,17 @@ export function scan(text: string): ScanResult {
     onlyWs = false;
 
     if (c === '/' && text[i + 1] === '/') {
-      let j = i + 2;
-      while (j < n) {
-        const cont = skipSplice(j);
-        if (cont >= 0) {
-          j = cont;
-          continue;
-        }
-        if (text[j] === '\n') break;
-        j++;
-      }
-      advanceTo(j);
+      advanceTo(skipLineComment(i, syntax));
       continue;
     }
 
     if (c === '/' && text[i + 1] === '*') {
-      const close = text.indexOf('*/', i + 2);
-      advanceTo(close < 0 ? n : close + 2);
+      advanceTo(skipBlockComment(i, syntax));
       continue;
     }
 
     if (c === '"' || c === "'") {
-      const quote = c;
-      let j = i + 1;
-      while (j < n) {
-        const ch = text[j];
-        if (ch === '\\') {
-          const cont = skipSplice(j);
-          j = cont >= 0 ? cont : j + 2;
-          continue;
-        }
-        if (ch === '\n') break;
-        j++;
-        if (ch === quote) break;
-      }
-      advanceTo(j);
+      advanceTo(skipQuoted(i, c, syntax));
       continue;
     }
 
