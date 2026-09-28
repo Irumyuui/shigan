@@ -22,7 +22,12 @@ export function registerHoverProvider(
 
       const markdown = new vscode.MarkdownString();
       for (const hint of hints) {
-        const kind = hint.kind === 'macro' ? vscode.l10n.t('preprocessor') : vscode.l10n.t('bracket');
+        const kind =
+          hint.kind === 'macro'
+            ? vscode.l10n.t('preprocessor')
+            : hint.kind === 'conditional'
+              ? vscode.l10n.t('conditional')
+              : vscode.l10n.t('bracket');
         const inactive = hint.inactive ? ` *${vscode.l10n.t('(inactive)')}*` : '';
         const text = hint.text.trim().replace(/`/g, "'");
         markdown.appendMarkdown(`\`${text}\` — *${kind}*${inactive}`);

@@ -47,7 +47,9 @@ export class ShiganInlayHintsProvider implements vscode.InlayHintsProvider, vsco
     if (visible.length === 0) return [];
 
     const sourceLines = document.getText().split(/\r?\n/);
-    return visible.map((hint) => toInlayHint(document, hint, sourceLines, tooltipLabels()));
+    return visible.map((hint) =>
+      toInlayHint(document, hint, sourceLines, tooltipLabels(document.languageId))
+    );
   }
 
   dispose(): void {
@@ -94,11 +96,12 @@ function toInlayHint(
   return inlay;
 }
 
-/** Localized strings for the jump tooltip. */
-function tooltipLabels(): TooltipLabels {
+/** Localized strings for the jump tooltip, fenced for the document's language. */
+function tooltipLabels(languageId: string): TooltipLabels {
   return {
     fallbackTitle: vscode.l10n.t('jump target'),
     lineSuffix: (line) => vscode.l10n.t('— line {0}', line),
+    fence: languageId,
   };
 }
 

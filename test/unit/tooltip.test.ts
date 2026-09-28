@@ -43,6 +43,16 @@ describe('buildJumpTooltip', () => {
       }).startsWith('ジャンプ先 — 1 行目')
     ).toBe(true);
   });
+
+  it('uses a custom code fence (e.g. rust) in the rendered markdown', () => {
+    expect(
+      buildJumpTooltip('#else', 2, CHAIN, {
+        fallbackTitle: 'jump target',
+        lineSuffix: (line) => `— line ${line}`,
+        fence: 'rust',
+      })
+    ).toBe(['`#else` — line 3', '', '```rust', '#else', '', '#endif', '```'].join('\n'));
+  });
 });
 
 describe('previewLines', () => {

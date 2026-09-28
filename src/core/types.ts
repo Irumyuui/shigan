@@ -47,7 +47,11 @@ export interface ScanResult {
   cfgs?: CfgAttributeToken[];
 }
 
-export type HintKind = 'bracket' | 'macro';
+/**
+ * Which producer emitted a hint. `conditional` is used by Rust `#[cfg]` gating
+ * hints; it is a distinct kind so it is never rendered as a bracket label.
+ */
+export type HintKind = 'bracket' | 'macro' | 'conditional';
 
 export interface Hint {
   /** Zero-based line the hint is attached to. */

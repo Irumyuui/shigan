@@ -11,6 +11,11 @@ export interface TooltipLabels {
   fallbackTitle: string;
   /** Rendered after the title, e.g. `— line 3`. */
   lineSuffix: (line: number) => string;
+  /**
+   * Markdown code-fence language for the preview, e.g. `rust`. Defaults to
+   * `'c'` so existing callers keep the C-family fence.
+   */
+  fence?: string;
 }
 
 export const DEFAULT_TOOLTIP_LABELS: TooltipLabels = {
@@ -45,7 +50,7 @@ export function buildJumpTooltip(
 
   const preview = previewLines(sourceLines, line);
   if (preview.length > 0) {
-    rows.push('', '```c', ...preview, '```');
+    rows.push('', `\`\`\`${labels.fence ?? 'c'}`, ...preview, '```');
   }
 
   return rows.join('\n');
