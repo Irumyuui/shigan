@@ -34,8 +34,6 @@ export interface CfgAttributeToken {
   /** Normalized attribute text, e.g. `#[cfg(all(unix, feature = "a"))]`. */
   display: string;
   line: number;
-  /** Inclusive end line for multi-line attributes. */
-  endLine: number;
   offset: number;
   col: number;
 }

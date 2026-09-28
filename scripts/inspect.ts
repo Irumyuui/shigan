@@ -11,7 +11,7 @@ import { syntaxFor } from '../src/core/language';
 import { scanRust } from '../src/core/lexer/rust';
 import { scan } from '../src/core/lexer/tokenizer';
 import { cConditionals, evaluateConditionals } from '../src/core/match/c-preprocessor';
-import { hostCfg, parseRustCfgEntries, RustCfgEnvironment } from '../src/core/match/rust/cfg';
+import { environmentFromSeed, featureFacts, RustCfgEnvironment } from '../src/core/match/rust/cfg';
 import { rustConditionals } from '../src/core/match/rust/conditionals';
 import { Hint, MacroDef } from '../src/core/types';
 
@@ -97,36 +97,26 @@ function print(kind: 'brackets' | 'macros', hints: Hint[]): void {
 
 /**
  * Rust cfg environment: a `<file>.cfg.json` seed wins; otherwise the observed
- * host plus the nearest Cargo.toml's features.
+ * host plus the nearest Cargo.toml's features. Both paths go through the shared
+ * seed/host builders in `cfg.ts`.
  */
 function rustEnvironment(filePath: string): RustCfgEnvironment {
   const seedPath = filePath.replace(/\.[^./\\]+$/, '.cfg.json');
   if (existsSync(seedPath)) {
-    const seed = JSON.parse(readFileSync(seedPath, 'utf8'));
-    const environment: RustCfgEnvironment = {};
-    if (seed.host) environment.host = hostCfg(seed.host.platform, seed.host.arch).predicates;
-    if (Array.isArray(seed.cfg)) environment.explicit = parseRustCfgEntries(seed.cfg);
-    if (seed.features) {
-      const manifest = seed.manifest ?? {};
-      environment.features = {
-        decidableAbsence: !manifest.virtual && !manifest.workspaceMember,
-        universe: new Set([...(seed.features.declared ?? []), ...(seed.features.implicit ?? [])]),
-        enabled: new Set(seed.features.default ?? []),
-      };
-    }
-    return environment;
+    return environmentFromSeed(JSON.parse(readFileSync(seedPath, 'utf8')));
   }
 
-  const environment: RustCfgEnvironment = {
-    host: hostCfg(process.platform, process.arch).predicates,
-  };
+  const environment = environmentFromSeed({
+    host: { platform: process.platform, arch: process.arch },
+  });
   const cargo = findCargoFeatures(filePath);
   if (cargo) {
-    environment.features = {
+    environment.features = featureFacts({
       decidableAbsence: !cargo.virtual && !hasAncestorManifest(filePath),
-      universe: new Set([...cargo.declared, ...cargo.implicit]),
+      declared: cargo.declared,
+      implicit: cargo.implicit,
       enabled: cargo.defaults,
-    };
+    });
   }
   return environment;
 }

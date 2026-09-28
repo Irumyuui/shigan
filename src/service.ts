@@ -8,7 +8,7 @@ import { languageKind, LanguageSyntax, syntaxFor } from './core/language';
 import { scanRust } from './core/lexer/rust';
 import { scan } from './core/lexer/tokenizer';
 import { cConditionals, evaluateConditionals } from './core/match/c-preprocessor';
-import { hostCfg, parseRustCfgEntries, RustCfgEnvironment } from './core/match/rust/cfg';
+import { featureFacts, hostCfg, parseRustCfgEntries, RustCfgEnvironment } from './core/match/rust/cfg';
 import { explicitDecidedSpans, rustConditionals } from './core/match/rust/conditionals';
 import { applyMergedInactivity, mergeRustInactiveLines } from './core/match/rust/diagnostics';
 import { pairCfgItems } from './core/match/rust/items';
@@ -265,11 +265,15 @@ function cFamilyDocumentHints(
     syntax,
   });
   // Activity is only known to the evaluator; build the model here so the
-  // renderer receives a self-contained `conditionals` value.
-  const conditionals = cConditionals(scanned.directives, {
-    branchActive: (line) => evaluation.branchActive.get(line),
-    blockActive: (line) => evaluation.blockActive.get(line),
-  });
+  // renderer receives a self-contained `conditionals` value. It is only needed
+  // when macro hints are shown — a brackets-only config skips the O(blocks)
+  // pairing entirely (computeHints builds nothing when `macros` is false).
+  const conditionals = display.macros
+    ? cConditionals(scanned.directives, {
+        branchActive: (line) => evaluation.branchActive.get(line),
+        blockActive: (line) => evaluation.blockActive.get(line),
+      })
+    : undefined;
 
   return computeHints(text, {
     ...display,
@@ -297,11 +301,12 @@ function rustEnvironment(
   if (config.rustInheritCargo && isRealFileScheme(document.uri.scheme)) {
     const cargo = findCargoFeatures(document.uri.fsPath);
     if (cargo) {
-      environment.features = {
+      environment.features = featureFacts({
         decidableAbsence: !cargo.virtual && !hasAncestorManifest(document.uri.fsPath),
-        universe: new Set([...cargo.declared, ...cargo.implicit]),
+        declared: cargo.declared,
+        implicit: cargo.implicit,
         enabled: cargo.defaults,
-      };
+      });
     }
   }
 

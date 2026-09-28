@@ -287,7 +287,7 @@ function applyUndef(macros: Map<string, MacroDef>, directive: DirectiveToken): v
 }
 
 export interface CPreprocessorOptions {
-  /** Activity lookups; same shape the renderer's legacy callbacks used. */
+  /** Activity lookups supplied by the preprocessor evaluator's maps. */
   branchActive?: (line: number) => boolean | undefined;
   blockActive?: (openerLine: number) => boolean | undefined;
 }

@@ -13,6 +13,8 @@
  * hide live code.
  */
 
+import { isIdentPart, isIdentStart } from '../../ident';
+
 /** Facts about the crate's feature universe, when a manifest was actually resolved. */
 export interface FeatureFacts {
   /** True only when a non-virtual, non-workspace-member manifest was resolved. */
@@ -30,6 +32,60 @@ export interface RustCfgEnvironment {
   host?: ReadonlySet<string>;
   /** Feature facts; absent => every `feature = "x"` is unknown unless explicitly set. */
   features?: FeatureFacts;
+}
+
+/**
+ * A platform-independent seed for a {@link RustCfgEnvironment}, mirroring what
+ * the fixture harness and `scripts/inspect.ts` read from a `<case>.cfg.json`.
+ * Absent fields stay absent, so a seed never guesses a fact the caller did not
+ * supply.
+ */
+export interface RustCfgSeed {
+  host?: { platform: string; arch: string };
+  features?: { default?: string[]; declared?: string[]; implicit?: string[] };
+  manifest?: { virtual?: boolean; workspaceMember?: boolean };
+  cfg?: string[];
+}
+
+/**
+ * Builds the feature facts from already-resolved parts. Kept separate from
+ * {@link environmentFromSeed} so the document-based path (Cargo.toml facts plus
+ * the ancestor-manifest check) shares exactly this math instead of re-deriving
+ * the universe/enabled sets and the absence decision.
+ */
+export function featureFacts(parts: {
+  decidableAbsence: boolean;
+  declared?: Iterable<string>;
+  implicit?: Iterable<string>;
+  enabled?: Iterable<string>;
+}): FeatureFacts {
+  return {
+    decidableAbsence: parts.decidableAbsence,
+    universe: new Set([...(parts.declared ?? []), ...(parts.implicit ?? [])]),
+    enabled: new Set(parts.enabled ?? []),
+  };
+}
+
+/**
+ * The single seed→environment builder. `host` is only observed when the seed
+ * names one (never `process`), and feature facts appear only when the seed
+ * declares features — so Linux CI and a Windows dev box agree.
+ */
+export function environmentFromSeed(seed: RustCfgSeed = {}): RustCfgEnvironment {
+  const environment: RustCfgEnvironment = {
+    explicit: parseRustCfgEntries(seed.cfg ?? []),
+  };
+  if (seed.host) environment.host = hostCfg(seed.host.platform, seed.host.arch).predicates;
+  if (seed.features) {
+    const manifest = seed.manifest ?? {};
+    environment.features = featureFacts({
+      decidableAbsence: !manifest.virtual && !manifest.workspaceMember,
+      declared: seed.features.declared,
+      implicit: seed.features.implicit,
+      enabled: seed.features.default,
+    });
+  }
+  return environment;
 }
 
 /** Canonical form of a key-value predicate, e.g. `feature="serde"`. */
@@ -253,10 +309,10 @@ class PredicateParser {
   }
 
   private readIdentifier(): string | undefined {
-    if (!isIdentifierStart(this.text[this.pos])) return undefined;
+    if (!isIdentStart(this.text[this.pos])) return undefined;
     const start = this.pos;
     this.pos++;
-    while (this.pos < this.text.length && isIdentifierPart(this.text[this.pos])) this.pos++;
+    while (this.pos < this.text.length && isIdentPart(this.text[this.pos])) this.pos++;
     return this.text.slice(start, this.pos);
   }
 
@@ -412,10 +468,3 @@ function normalizeArch(arch: string): string | undefined {
   return mapped in ARCH_FACTS ? mapped : undefined;
 }
 
-function isIdentifierStart(c: string | undefined): boolean {
-  return c !== undefined && ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c === '_');
-}
-
-function isIdentifierPart(c: string): boolean {
-  return isIdentifierStart(c) || (c >= '0' && c <= '9');
-}

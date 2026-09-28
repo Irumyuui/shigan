@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  environmentFromSeed,
   evaluateCfgPredicate,
   hostCfg,
   parseRustCfgEntries,
@@ -249,6 +250,26 @@ describe('precedence', () => {
     expect(evaluateCfgPredicate('unix', environment)).toBe(false);
   });
 
+  it('an explicit windows=true beats a linux host (host says windows=false)', () => {
+    const environment = environmentFromSeed({
+      host: { platform: 'linux', arch: 'x64' },
+      cfg: ['windows'],
+    });
+    // Discriminating: the host really does say windows=false, so an
+    // explicit-last mutant would resolve this to false instead of true.
+    expect(environment.host?.has('windows')).toBe(false);
+    expect(evaluateCfgPredicate('windows', environment)).toBe(true);
+  });
+
+  it('an explicit -windows beats a windows host (host says windows=true)', () => {
+    const environment = environmentFromSeed({
+      host: { platform: 'win32', arch: 'x64' },
+      cfg: ['-windows'],
+    });
+    expect(environment.host?.has('windows')).toBe(true);
+    expect(evaluateCfgPredicate('windows', environment)).toBe(false);
+  });
+
   it('an explicit feature true beats an undecidable absence', () => {
     const environment: RustCfgEnvironment = {
       explicit: parseRustCfgEntries(['feature="zz"']),
@@ -262,6 +283,59 @@ describe('precedence', () => {
       explicit: parseRustCfgEntries(['test']),
     };
     expect(evaluateCfgPredicate('test', environment)).toBe(true);
+  });
+});
+
+describe('environmentFromSeed', () => {
+  it('builds host, explicit and feature facts from the seed', () => {
+    const environment = environmentFromSeed({
+      host: { platform: 'linux', arch: 'x64' },
+      cfg: ['windows', 'feature="serde"'],
+      features: { declared: ['a', 'b'], implicit: ['opt'], default: ['a'] },
+      manifest: { virtual: false },
+    });
+
+    expect(environment.host?.has('unix')).toBe(true);
+    expect(environment.host?.has('windows')).toBe(false);
+    expect(environment.explicit?.get('windows')).toBe(true);
+    expect(environment.explicit?.get('feature="serde"')).toBe(true);
+    expect(environment.features).toEqual({
+      decidableAbsence: true,
+      universe: new Set(['a', 'b', 'opt']),
+      enabled: new Set(['a']),
+    });
+  });
+
+  it('makes a virtual manifest undecidable with empty enabled', () => {
+    const environment = environmentFromSeed({
+      features: { declared: ['a'] },
+      manifest: { virtual: true },
+    });
+    expect(environment.features).toEqual({
+      decidableAbsence: false,
+      universe: new Set(['a']),
+      enabled: new Set(),
+    });
+    expect(environment.host).toBeUndefined();
+  });
+
+  it('treats a workspace-member manifest as undecidable', () => {
+    const environment = environmentFromSeed({
+      features: { implicit: ['opt'] },
+      manifest: { workspaceMember: true },
+    });
+    expect(environment.features).toEqual({
+      decidableAbsence: false,
+      universe: new Set(['opt']),
+      enabled: new Set(),
+    });
+  });
+
+  it('defaults to an empty explicit map and no host or features', () => {
+    const environment = environmentFromSeed();
+    expect(environment.explicit?.size).toBe(0);
+    expect(environment.host).toBeUndefined();
+    expect(environment.features).toBeUndefined();
   });
 });
 

@@ -1,4 +1,4 @@
-import { countNewlines, isIdentPart, isIdentStart } from '../ident';
+import { isIdentPart, isIdentStart } from '../ident';
 import { BracketToken, CfgAttributeToken, ScanResult } from '../types';
 
 const BRACKETS = new Set(['(', ')', '[', ']', '{', '}']);
@@ -251,7 +251,6 @@ export function scanRust(text: string): ScanResult {
             inner,
             display: normalizeWhitespace(raw),
             line: startLine,
-            endLine: startLine + countNewlines(raw),
             offset: start,
             col: startCol,
           });

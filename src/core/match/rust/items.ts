@@ -1,3 +1,4 @@
+import { isIdentPart, isIdentStart } from '../../ident';
 import { BracketToken, CfgAttributeToken, ScanResult } from '../../types';
 import { matchBrackets } from '../brackets';
 
@@ -828,13 +829,13 @@ function skipQuoteInLine(text: string, col: number): number {
     return text[j] === "'" ? j + 1 : j;
   }
 
-  if (next !== undefined && isIdentStartChar(next)) {
+  if (next !== undefined && isIdentStart(next)) {
     let j = col + 1;
-    while (j < text.length && isIdentChar(text[j])) j++;
+    while (j < text.length && isIdentPart(text[j])) j++;
     if (text[j] === "'") return j + 1; // char literal
-    if (text[j] === '#' && isIdentStartChar(text[j + 1] ?? '')) {
+    if (text[j] === '#' && isIdentStart(text[j + 1])) {
       j++;
-      while (j < text.length && isIdentChar(text[j])) j++;
+      while (j < text.length && isIdentPart(text[j])) j++;
     }
     return j; // lifetime
   }
@@ -842,14 +843,6 @@ function skipQuoteInLine(text: string, col: number): number {
   let j = col + 1;
   while (j < text.length && text[j] !== "'" && text[j] !== '\n') j++;
   return text[j] === "'" ? j + 1 : j;
-}
-
-function isIdentStartChar(ch: string): boolean {
-  return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || ch === '_';
-}
-
-function isIdentChar(ch: string): boolean {
-  return isIdentStartChar(ch) || (ch >= '0' && ch <= '9');
 }
 
 /**

@@ -140,7 +140,6 @@ describe('rust attributes', () => {
       inner: false,
       display: '#[cfg(all(unix, feature = "a"))]',
       line: 0,
-      endLine: 0,
       offset: 0,
       col: 0,
     });
@@ -156,7 +155,6 @@ describe('rust attributes', () => {
       inner: false,
       display: '#[cfg( all(unix) )]',
       line: 0,
-      endLine: 2,
     });
   });
 
