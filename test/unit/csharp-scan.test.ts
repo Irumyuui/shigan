@@ -52,4 +52,37 @@ describe('tokenizer C# literals', () => {
     expect(bracketChars(text, syntaxFor('c'))).toBe('');
     expect(bracketChars(text, CSHARP)).toBe('}');
   });
+
+  it('does not treat @class / @if verbatim identifiers as string prefixes', () => {
+    const chars = scan('var @class = new[] { 1 }; if (@if) { }', CSHARP).brackets.map(
+      (b) => b.char
+    );
+    expect(chars).toEqual(['[', ']', '{', '}', '(', ')', '{', '}']);
+  });
+
+  it('skips char literals containing brackets', () => {
+    expect(bracketChars("char a = '}'; char b = '{'; char c = '\\}'; }")).toBe('}');
+  });
+
+  it('consumes an unterminated verbatim string to EOF', () => {
+    expect(bracketChars('var s = @"oops { ( } ]')).toBe('');
+  });
+
+  it('consumes an unterminated raw string to EOF', () => {
+    expect(bracketChars('var s = """oops { ( } ]')).toBe('');
+  });
+
+  it('lets a 4-quote raw string contain a 3-quote run', () => {
+    expect(bracketChars('var s = """"a """ b""""; }')).toBe('}');
+  });
+
+  it('handles a verbatim string ending with an escaped quote', () => {
+    expect(bracketChars('var s = @"a"""; }')).toBe('}');
+  });
+
+  it('ends an interpolated string early when a hole contains a quote', () => {
+    // Documented limitation: interpolated holes are opaque, so a `"` inside a
+    // hole closes the literal early and the inner braces leak as ordinary code.
+    expect(bracketChars('$"{ "a } b }"')).toBe('}}');
+  });
 });
