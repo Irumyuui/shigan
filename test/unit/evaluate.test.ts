@@ -93,4 +93,39 @@ describe('evaluateConditionals', () => {
     expect(result.branchActive.get(0)).toBe(true);
     expect(result.blockActive.get(0)).toBe(true);
   });
+
+  it('decides character-escape comparisons in #if', () => {
+    const result = evaluate("#if '\\a' == 7\nint a;\n#else\nint b;\n#endif\n");
+    expect(result.branchActive.get(0)).toBe(true);
+    expect(result.branchActive.get(2)).toBe(false);
+    expect(result.blockActive.get(0)).toBe(true);
+  });
+
+  it('ignores comments in #if / #elif expressions', () => {
+    const result = evaluate('#if 0 // reason\nint a;\n#else\nint b;\n#endif\n');
+    expect(sortedLines(result.inactiveLines)).toEqual([1]);
+    expect(result.branchActive.get(0)).toBe(false);
+    expect(result.branchActive.get(2)).toBe(true);
+  });
+
+  it('resolves a #if with an inline block comment', () => {
+    const result = evaluate('#if /* c */ 1\nint a;\n#endif\n');
+    expect(result.branchActive.get(0)).toBe(true);
+    expect(result.blockActive.get(0)).toBe(true);
+  });
+
+  it('resolves an #ifdef whose symbol is preceded by an inline comment', () => {
+    const result = evaluate('#ifdef /* c */ FEATURE\nint a;\n#else\nint b;\n#endif\n', {
+      FEATURE: '1',
+    });
+    expect(result.branchActive.get(0)).toBe(true);
+    expect(result.branchActive.get(2)).toBe(false);
+  });
+
+  it('stays conservative when an #if expression remains unparseable', () => {
+    const result = evaluate('#if MAX(1,2) /* nope */\nint a;\n#else\nint b;\n#endif\n');
+    expect(sortedLines(result.inactiveLines)).toEqual([]);
+    expect(result.branchActive.get(0)).toBe(true);
+    expect(result.branchActive.get(2)).toBe(true);
+  });
 });

@@ -230,6 +230,21 @@ function lex(text: string): Token[] | undefined {
       continue;
     }
 
+    // Comments are whitespace in C expressions. A line comment runs to the end
+    // of the input; an unterminated block comment cannot be resolved, so stay
+    // conservative instead of guessing where the expression continues.
+    if (c === '/' && text[i + 1] === '/') {
+      i += 2;
+      while (i < text.length && text[i] !== '\n') i++;
+      continue;
+    }
+    if (c === '/' && text[i + 1] === '*') {
+      const close = text.indexOf('*/', i + 2);
+      if (close < 0) return undefined;
+      i = close + 2;
+      continue;
+    }
+
     if (c >= '0' && c <= '9') {
       const next = parseNumber(text, i);
       if (!next) return undefined;
@@ -304,29 +319,67 @@ function parseChar(text: string, start: number): { value: number; index: number 
 
   let value: number;
   if (text[j] === '\\') {
-    const escaped = text[j + 1];
-    if (escaped === undefined) return undefined;
-    value = ESCAPES[escaped] ?? escaped.charCodeAt(0);
-    j += 2;
+    const escaped = parseEscape(text, j + 1);
+    if (!escaped) return undefined;
+    value = escaped.value;
+    j = escaped.index;
   } else {
     value = text.charCodeAt(j);
     j++;
   }
 
-  if (text[j] === "'") j++;
-  else if (text[j] === undefined) return undefined;
+  // Require the closing quote; a multi-character or unterminated literal is
+  // not something we can evaluate, so stay unknown rather than guess.
+  if (text[j] !== "'") return undefined;
+  j++;
 
   return { value, index: j };
 }
 
-const ESCAPES: Record<string, number> = {
+/**
+ * Parses the body of a C character escape (the text after the backslash).
+ *
+ * Supports the simple escapes, octal (`\123`, one to three octal digits) and
+ * hex (`\x41`, one or more hex digits). Anything unrecognized or malformed
+ * yields `undefined`, so evaluation falls back to "unknown" instead of a
+ * plausible-looking but wrong number.
+ */
+function parseEscape(text: string, start: number): { value: number; index: number } | undefined {
+  const c = text[start];
+  if (c === undefined) return undefined;
+
+  const simple = SIMPLE_ESCAPES[c];
+  if (simple !== undefined) return { value: simple, index: start + 1 };
+
+  if (c === 'x') {
+    let j = start + 1;
+    const begin = j;
+    while (j < text.length && isHexDigit(text[j])) j++;
+    if (j === begin) return undefined;
+    return { value: parseInt(text.slice(begin, j), 16), index: j };
+  }
+
+  if (c >= '0' && c <= '7') {
+    let j = start;
+    while (j < text.length && j - start < 3 && text[j] >= '0' && text[j] <= '7') j++;
+    return { value: parseInt(text.slice(start, j), 8), index: j };
+  }
+
+  return undefined;
+}
+
+const SIMPLE_ESCAPES: Record<string, number> = {
+  a: 7,
+  b: 8,
+  f: 12,
   n: 10,
-  t: 9,
   r: 13,
-  '0': 0,
+  t: 9,
+  v: 11,
   '\\': 92,
   "'": 39,
   '"': 34,
+  '?': 63,
 };
 
 function isIdentStart(c: string): boolean {

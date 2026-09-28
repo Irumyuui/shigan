@@ -80,9 +80,39 @@ describe('tokenizer C# literals', () => {
     expect(bracketChars('var s = @"a"""; }')).toBe('}');
   });
 
-  it('ends an interpolated string early when a hole contains a quote', () => {
-    // Documented limitation: interpolated holes are opaque, so a `"` inside a
-    // hole closes the literal early and the inner braces leak as ordinary code.
-    expect(bracketChars('$"{ "a } b }"')).toBe('}}');
+  it('treats an interpolated string with a quoted hole as opaque', () => {
+    expect(bracketChars('$"{ "a } b }"')).toBe('');
+  });
+
+  it('keeps a hole containing a quoted string from leaking brackets', () => {
+    const text = 'class C {\n  string s = $"{ "} { " }";\n}\n';
+    expect(bracketChars(text)).toBe('{}');
+    expect(scan(text, CSHARP).brackets.map((b) => b.line)).toEqual([0, 2]);
+  });
+
+  it('skips a nested interpolated string inside a hole', () => {
+    expect(bracketChars('var s = $"{ $"{"} "}" }"; }')).toBe('}');
+  });
+
+  it('skips braces of a nested collection initializer inside a hole', () => {
+    expect(bracketChars('var x = $"{ new[] { 1, 2 }.Length }"; }')).toBe('}');
+  });
+
+  it('honours {{ and }} literal escapes in an interpolated string', () => {
+    expect(bracketChars('var s = $"a {{b}} {x} c"; }')).toBe('}');
+    expect(bracketChars('var s = $"{{{x}}}" ; }')).toBe('}');
+  });
+
+  it('honours "" doubling in a verbatim interpolated string', () => {
+    expect(bracketChars('var s = $@"a ""b"" {x} c"; }')).toBe('}');
+  });
+
+  it('honours escapes inside a non-verbatim interpolation hole', () => {
+    expect(bracketChars('var s = $"{ "a\\"b\\\\c" }"; }')).toBe('}');
+  });
+
+  it('consumes an unterminated interpolation hole to EOF', () => {
+    expect(bracketChars('var s = $"{ "a }')).toBe('');
+    expect(bracketChars('var s = $"{ x')).toBe('');
   });
 });

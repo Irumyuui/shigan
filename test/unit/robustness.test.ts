@@ -79,4 +79,20 @@ describe('robustness', () => {
     expect(hints).toHaveLength(1);
     expect(hints[0].text).toContain('#if defined(A) && defined(B)');
   });
+
+  it('omits a trailing comment from the directive label', () => {
+    const text = '#if 1 // note\nint f(void) {\n}\n#endif\n';
+    const hints = computeHints(text, { brackets: false, macros: true, trigger: 'always' });
+    expect(hints).toHaveLength(1);
+    expect(hints[0].text).toContain('#if 1');
+    expect(hints[0].text).not.toContain('note');
+  });
+
+  it('recognizes a directive after a same-line block comment', () => {
+    const text = '/* c */ #if 1\nint f(void) {\n}\n/* x */ #endif\n';
+    const hints = computeHints(text, { brackets: false, macros: true, trigger: 'always' });
+    expect(hints).toHaveLength(1);
+    expect(hints[0].line).toBe(3);
+    expect(hints[0].text).toContain('#if 1');
+  });
 });

@@ -122,12 +122,113 @@ export function scan(text: string, syntax: LanguageSyntax = C_SYNTAX): ScanResul
   };
 
   /**
+   * End index (exclusive) of the string or char literal starting at `k` inside
+   * an interpolation hole. Char literals reuse `skipQuoted`; C# `@`/`$` forms
+   * recurse through `skipCSharpLiteral`, so a literal nested in a hole cannot
+   * end the enclosing literal early. Returns `k` when `k` does not start a
+   * literal (e.g. a verbatim identifier `@class`).
+   */
+  const skipNestedLiteral = (k: number): number => {
+    const c = text[k];
+    if (c === "'") return skipQuoted(k, "'", syntax);
+    const cs = skipCSharpLiteral(k);
+    if (cs >= 0) return cs;
+    return c === '"' ? skipQuoted(k, '"', syntax) : k;
+  };
+
+  /**
+   * End index (exclusive) of the interpolation hole whose `{` is at `k`.
+   * Consumes balanced `{`/`}` while skipping nested literals and comments, so
+   * brackets inside the hole never leak as ordinary code. An unterminated hole
+   * consumes the rest of the document.
+   */
+  const skipInterpolationHole = (k: number): number => {
+    let j = k + 1;
+    let depth = 1;
+    while (j < n) {
+      const ch = text[j];
+      if (ch === '{') {
+        depth++;
+        j++;
+        continue;
+      }
+      if (ch === '}') {
+        depth--;
+        j++;
+        if (depth === 0) return j;
+        continue;
+      }
+      if (ch === '"' || ch === "'" || ch === '@' || ch === '$') {
+        const end = skipNestedLiteral(j);
+        j = end > j ? end : j + 1;
+        continue;
+      }
+      if (ch === '/' && text[j + 1] === '/') {
+        j = skipLineComment(j, syntax);
+        continue;
+      }
+      if (ch === '/' && text[j + 1] === '*') {
+        j = skipBlockComment(j, syntax);
+        continue;
+      }
+      j++;
+    }
+    return n;
+  };
+
+  /**
+   * End index (exclusive) of the interpolated string whose opening quote is at
+   * `quotePos` (the prefix is already consumed). `verbatim` selects `""`
+   * doubling over backslash escapes. A `{` that is not `{{` opens an
+   * interpolation hole consumed by `skipInterpolationHole`; `{{` and `}}` are
+   * literal escapes. An unterminated non-verbatim literal stops at the next
+   * unescaped newline, a verbatim one consumes the rest of the document.
+   */
+  const skipInterpolated = (quotePos: number, verbatim: boolean): number => {
+    let j = quotePos + 1;
+    while (j < n) {
+      const ch = text[j];
+      if (verbatim) {
+        if (ch === '"') {
+          if (text[j + 1] === '"') {
+            j += 2;
+            continue;
+          }
+          return j + 1;
+        }
+      } else {
+        if (ch === '\\') {
+          const cont = skipSplice(j);
+          j = cont >= 0 ? cont : j + 2;
+          continue;
+        }
+        if (ch === '\n') return j;
+        if (ch === '"') return j + 1;
+      }
+      if (ch === '{') {
+        if (text[j + 1] === '{') {
+          j += 2;
+          continue;
+        }
+        j = skipInterpolationHole(j);
+        continue;
+      }
+      if (ch === '}' && text[j + 1] === '}') {
+        j += 2;
+        continue;
+      }
+      j++;
+    }
+    return n;
+  };
+
+  /**
    * End index (exclusive) of a C# literal starting at `k`, or -1 when `k` does
    * not start one. Recognized forms:
    *  - verbatim `@"..."`, where `""` is a doubled (escaped) quote;
-   *  - interpolated `$"..."`, `$@"..."` and `@$"..."`, where the whole literal
-   *    (including its `{...}` holes) is treated as opaque — a known limitation
-   *    is that a `"` inside a hole ends the literal early;
+   *  - interpolated `$"..."`, `$@"..."` and `@$"..."`, whose `{...}` holes are
+   *    consumed by the hole-aware `skipInterpolated`, so a quote or brace
+   *    inside a hole stays opaque;
    *  - raw `"""..."""` (three or more opening quotes, optionally prefixed with
    *    any number of `$` for interpolation), ending at the first run of at
    *    least as many quotes as the opener.
@@ -176,6 +277,12 @@ export function scan(text: string, syntax: LanguageSyntax = C_SYNTAX): ScanResul
       return n; // Unterminated: consume the rest of the document.
     }
 
+    if (dollars > 0) {
+      // Interpolated string: hole-aware so a `"`/brace inside `{...}` does not
+      // end the literal early.
+      return skipInterpolated(p, verbatim);
+    }
+
     if (verbatim) {
       // `""` is an escaped quote; a lone `"` closes the literal.
       let j = p + 1;
@@ -192,8 +299,7 @@ export function scan(text: string, syntax: LanguageSyntax = C_SYNTAX): ScanResul
       return n;
     }
 
-    // Interpolated but not verbatim: same rules as a regular string.
-    return dollars > 0 ? skipQuoted(p, '"', syntax) : -1;
+    return -1;
   };
 
   while (i < n) {
@@ -249,8 +355,9 @@ export function scan(text: string, syntax: LanguageSyntax = C_SYNTAX): ScanResul
       continue;
     }
 
-    onlyWs = false;
-
+    // Comments are whitespace in C, so they neither terminate the "only
+    // whitespace so far" state nor prevent a following `#` from being a
+    // directive on the same line.
     if (c === '/' && text[i + 1] === '/') {
       advanceTo(skipLineComment(i, syntax));
       continue;
@@ -260,6 +367,8 @@ export function scan(text: string, syntax: LanguageSyntax = C_SYNTAX): ScanResul
       advanceTo(skipBlockComment(i, syntax));
       continue;
     }
+
+    onlyWs = false;
 
     if (syntax.rawStrings) {
       const rawEnd = skipRawString(i);
@@ -301,7 +410,67 @@ function countNewlines(s: string): number {
 }
 
 function normalizeDirective(raw: string): string {
-  return raw.replace(/\\\r?\n/g, ' ').replace(/\s+/g, ' ').trim();
+  const spliced = raw.replace(/\\\r?\n/g, ' ');
+  const stripped = stripComments(spliced);
+  // An unterminated block comment spills past this logical line, so keep the
+  // text as-is: evaluation then stays conservative instead of deciding a value
+  // from a truncated expression.
+  const cleaned = stripped === undefined ? spliced : stripped;
+  return cleaned.replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Removes line and block comments that sit outside string and character
+ * literals. Returns `undefined` when a block comment is not closed within
+ * `text`, because the real comment may continue on lines outside this slice.
+ */
+function stripComments(text: string): string | undefined {
+  let out = '';
+  let i = 0;
+  const n = text.length;
+
+  while (i < n) {
+    const c = text[i];
+
+    if (c === '"' || c === "'") {
+      const quote = c;
+      out += c;
+      i++;
+      while (i < n) {
+        const ch = text[i];
+        out += ch;
+        i++;
+        if (ch === '\\') {
+          if (i < n) {
+            out += text[i];
+            i++;
+          }
+          continue;
+        }
+        if (ch === quote || ch === '\n') break;
+      }
+      continue;
+    }
+
+    if (c === '/' && text[i + 1] === '/') {
+      i += 2;
+      while (i < n && text[i] !== '\n') i++;
+      continue;
+    }
+
+    if (c === '/' && text[i + 1] === '*') {
+      const close = text.indexOf('*' + '/', i + 2);
+      if (close < 0) return undefined;
+      out += ' ';
+      i = close + 2;
+      continue;
+    }
+
+    out += c;
+    i++;
+  }
+
+  return out;
 }
 
 function directiveName(display: string): string {

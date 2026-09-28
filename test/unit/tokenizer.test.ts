@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { syntaxFor } from '../../src/core/language';
 import { scan } from '../../src/core/lexer/tokenizer';
 
 describe('tokenizer.brackets', () => {
@@ -29,6 +30,13 @@ describe('tokenizer.brackets', () => {
   it('tracks line and column', () => {
     expect(scan('a\n  {\n').brackets).toEqual([{ char: '{', offset: 4, line: 1, col: 2 }]);
   });
+
+  it('keeps brackets opaque inside a C# interpolation hole', () => {
+    const chars = scan('var s = $"{ "}" }";', syntaxFor('csharp'))
+      .brackets.map((b) => b.char)
+      .join('');
+    expect(chars).toBe('');
+  });
 });
 
 describe('tokenizer.directives', () => {
@@ -54,6 +62,28 @@ describe('tokenizer.directives', () => {
   it('exposes the normalized display text', () => {
     const directives = scan('#if   defined(A)   &&   B\n#endif\n').directives;
     expect(directives[0].display).toBe('#if defined(A) && B');
+  });
+
+  it('strips a trailing line comment from the display but keeps the code', () => {
+    const directives = scan('#if 1 // note\n#endif\n').directives;
+    expect(directives[0].display).toBe('#if 1');
+  });
+
+  it('strips an inline block comment from the display', () => {
+    const directives = scan('#if /* c */ 1\n#endif\n').directives;
+    expect(directives[0].display).toBe('#if 1');
+  });
+
+  it('keeps comment-like text inside string literals', () => {
+    const directives = scan('#define URL "http://x"\n').directives;
+    expect(directives[0].display).toBe('#define URL "http://x"');
+  });
+
+  it('recognizes a directive preceded by a same-line block comment', () => {
+    const directives = scan('/* c */ #if 1\nint a;\n/* x */ #endif\n').directives;
+    expect(directives.map((d) => d.name)).toEqual(['if', 'endif']);
+    expect(directives[0].display).toBe('#if 1');
+    expect(directives[0].line).toBe(0);
   });
 });
 

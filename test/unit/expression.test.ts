@@ -65,4 +65,51 @@ describe('evaluateExpression', () => {
     expect(evaluateExpression("'A'", macros({}))).toBe(65);
     expect(evaluateExpression("'\\n'", macros({}))).toBe(10);
   });
+
+  it('resolves every C escape sequence to its C value', () => {
+    const cases: Array<[string, number]> = [
+      ['\\a', 7],
+      ['\\b', 8],
+      ['\\f', 12],
+      ['\\n', 10],
+      ['\\r', 13],
+      ['\\t', 9],
+      ['\\v', 11],
+      ['\\0', 0],
+      ['\\\\', 92],
+      ["\\'", 39],
+      ['\\"', 34],
+      ['\\?', 63],
+      ['\\123', 0o123],
+      ['\\x41', 0x41],
+    ];
+    for (const [escape, value] of cases) {
+      expect(evaluateExpression(`'${escape}'`, macros({}))).toBe(value);
+    }
+  });
+
+  it('decides an #if-style escape comparison correctly', () => {
+    expect(evaluateExpression("'\\a' == 7", macros({}))).toBe(1);
+    expect(evaluateExpression("'\\v' == 11", macros({}))).toBe(1);
+    expect(evaluateExpression("'\\x41' == 'A'", macros({}))).toBe(1);
+  });
+
+  it('falls back to unknown for malformed character escapes', () => {
+    expect(evaluateExpression("'\\x'", macros({}))).toBeUndefined();
+    expect(evaluateExpression("'\\q'", macros({}))).toBeUndefined();
+    expect(evaluateExpression("'\\'", macros({}))).toBeUndefined();
+    expect(evaluateExpression("'A", macros({}))).toBeUndefined();
+    expect(evaluateExpression("'AB'", macros({}))).toBeUndefined();
+  });
+
+  it('treats comments inside an expression as whitespace', () => {
+    expect(evaluateExpression('0 // reason', macros({}))).toBe(0);
+    expect(evaluateExpression('// leading\n1', macros({}))).toBe(1);
+    expect(evaluateExpression('/* c */ 1', macros({}))).toBe(1);
+    expect(evaluateExpression('1 /* between */ + 2', macros({}))).toBe(3);
+  });
+
+  it('stays conservative when a block comment is unterminated', () => {
+    expect(evaluateExpression('1 /* unterminated', macros({}))).toBeUndefined();
+  });
 });
