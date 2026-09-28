@@ -18,9 +18,10 @@ const BRACKETS = new Set(['(', ')', '[', ']', '{', '}']);
  * string. Directive lines are treated as opaque: brackets inside them are not
  * reported (macro bodies are a documented limitation).
  *
- * `syntax` selects the lexical profile. The only difference today is raw
- * string literals: recognized when `syntax.rawStrings` is true (C++), skipped
- * like a C string otherwise, so C output is byte-identical.
+ * `syntax` selects the lexical profile. The only differences today are raw
+ * string literals (C++, when `syntax.rawStrings` is true) and C# literals
+ * (when `syntax.csharpLiterals` is true); when a flag is false the construct is
+ * handled like an ordinary C string, so C output is byte-identical.
  */
 export function scan(text: string, syntax: LanguageSyntax = C_SYNTAX): ScanResult {
   const brackets: BracketToken[] = [];
@@ -84,7 +85,7 @@ export function scan(text: string, syntax: LanguageSyntax = C_SYNTAX): ScanResul
    * backslash-newline splices, and stops at an unescaped newline.
    */
   const skipQuoted = (k: number, quote: string, syntax: LanguageSyntax): number => {
-    void syntax; // csharpLiterals is inert until implemented.
+    void syntax; // Profile-specific literal forms are handled before this helper.
     let j = k + 1;
     while (j < n) {
       const ch = text[j];
@@ -118,6 +119,81 @@ export function scan(text: string, syntax: LanguageSyntax = C_SYNTAX): ScanResul
     const delim = open[1];
     const close = text.indexOf(')' + delim + '"', p + 2 + delim.length + 1);
     return close < 0 ? n : close + delim.length + 2;
+  };
+
+  /**
+   * End index (exclusive) of a C# literal starting at `k`, or -1 when `k` does
+   * not start one. Recognized forms:
+   *  - verbatim `@"..."`, where `""` is a doubled (escaped) quote;
+   *  - interpolated `$"..."`, `$@"..."` and `@$"..."`, where the whole literal
+   *    (including its `{...}` holes) is treated as opaque — a known limitation
+   *    is that a `"` inside a hole ends the literal early;
+   *  - raw `"""..."""` (three or more opening quotes, optionally prefixed with
+   *    any number of `$` for interpolation), ending at the first run of at
+   *    least as many quotes as the opener.
+   * A plain `"..."` (no prefix, single quote) returns -1 so the generic string
+   * handling, which behaves identically, keeps owning it.
+   */
+  const skipCSharpLiteral = (k: number): number => {
+    let p = k;
+    let dollars = 0;
+    let verbatim = false;
+    if (text[p] === '@') {
+      verbatim = true;
+      p++;
+      while (text[p] === '$') {
+        dollars++;
+        p++;
+      }
+    } else {
+      while (text[p] === '$') {
+        dollars++;
+        p++;
+      }
+      if (text[p] === '@') {
+        verbatim = true;
+        p++;
+      }
+    }
+    if (text[p] !== '"') return -1;
+
+    let quotes = 0;
+    while (text[p + quotes] === '"') quotes++;
+
+    if (quotes >= 3) {
+      // Raw string: close on a run of at least `quotes` double quotes.
+      let j = p + quotes;
+      while (j < n) {
+        if (text[j] !== '"') {
+          j++;
+          continue;
+        }
+        let run = 0;
+        while (text[j + run] === '"') run++;
+        if (run >= quotes) return j + run;
+        j += run;
+      }
+      return n; // Unterminated: consume the rest of the document.
+    }
+
+    if (verbatim) {
+      // `""` is an escaped quote; a lone `"` closes the literal.
+      let j = p + 1;
+      while (j < n) {
+        if (text[j] === '"') {
+          if (text[j + 1] === '"') {
+            j += 2;
+            continue;
+          }
+          return j + 1;
+        }
+        j++;
+      }
+      return n;
+    }
+
+    // Interpolated but not verbatim: same rules as a regular string.
+    return dollars > 0 ? skipQuoted(p, '"', syntax) : -1;
   };
 
   while (i < n) {
@@ -189,6 +265,14 @@ export function scan(text: string, syntax: LanguageSyntax = C_SYNTAX): ScanResul
       const rawEnd = skipRawString(i);
       if (rawEnd >= 0) {
         advanceTo(rawEnd);
+        continue;
+      }
+    }
+
+    if (syntax.csharpLiterals) {
+      const csEnd = skipCSharpLiteral(i);
+      if (csEnd >= 0) {
+        advanceTo(csEnd);
         continue;
       }
     }

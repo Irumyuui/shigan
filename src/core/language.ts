@@ -37,9 +37,18 @@ export const CPP_SYNTAX: LanguageSyntax = {
   csharpLiterals: false,
 };
 
+/** C# profile: C plus verbatim, interpolated and raw string literals. */
+export const CSHARP_SYNTAX: LanguageSyntax = {
+  id: 'csharp',
+  family: 'c',
+  rawStrings: false,
+  csharpLiterals: true,
+};
+
 const BY_LANGUAGE_ID: Readonly<Record<string, LanguageSyntax>> = {
   c: C_SYNTAX,
   cpp: CPP_SYNTAX,
+  csharp: CSHARP_SYNTAX,
 };
 
 /**
