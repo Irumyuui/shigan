@@ -2,10 +2,12 @@ import * as assert from 'assert';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as vscode from 'vscode';
+import type { ComputedHint } from './support';
 import {
   applyBaseline,
   bracketAt,
   computedHints,
+  delay,
   macroAt,
   openFixture,
   restoreTouched,
@@ -298,3 +300,150 @@ suite('Shigan C#', () => {
     assert.strictEqual(classPair.target?.line, 4, 'the pair should open on the lone `{`');
   });
 });
+
+/**
+ * Watcher fixtures. `watch.cs` pins line 7 as the close of the `#if DEBUG`
+ * method body, so its `inactive` flag tracks whether the csproj's DEBUG symbol
+ * is visible.
+ */
+const WATCH_PROBE = [
+  'class Watch',
+  '{',
+  '#if DEBUG',
+  '    void Debug()',
+  '    {',
+  '        int a = 0;',
+  '        a++;',
+  '    }',
+  '#else',
+  '    void Otherwise()',
+  '    {',
+  '        int b = 0;',
+  '        b++;',
+  '    }',
+  '#endif',
+  '}',
+].join('\n');
+
+/** Close of the `#if DEBUG` body in {@link WATCH_PROBE}. */
+const WATCH_DEBUG_BODY_CLOSE = 7;
+
+const WATCH_CSPROJ_DEBUG = [
+  '<Project Sdk="Microsoft.NET.Sdk">',
+  '  <PropertyGroup>',
+  '    <TargetFramework>net8.0</TargetFramework>',
+  '  </PropertyGroup>',
+  '  <PropertyGroup Condition=" \'$(Configuration)\' == \'Debug\' ">',
+  '    <DefineConstants>DEBUG</DefineConstants>',
+  '  </PropertyGroup>',
+  '</Project>',
+].join('\n');
+
+/** The same project without DEBUG, so the branch flips inactive. */
+const WATCH_CSPROJ_NO_DEBUG = [
+  '<Project Sdk="Microsoft.NET.Sdk">',
+  '  <PropertyGroup>',
+  '    <TargetFramework>net8.0</TargetFramework>',
+  '  </PropertyGroup>',
+  '</Project>',
+].join('\n');
+
+const WATCH_POLL_INTERVAL_MS = 100;
+const WATCH_POLL_TIMEOUT_MS = 5000;
+
+suite('Shigan C# project watching', () => {
+  let fixtureDir = '';
+
+  suiteSetup(async () => {
+    const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    assert.ok(root, 'the test workspace folder is missing');
+
+    fixtureDir = join(root, 'fixture', 'watch');
+    mkdirSync(fixtureDir, { recursive: true });
+    writeFileSync(join(fixtureDir, 'watch.cs'), WATCH_PROBE);
+
+    // Best effort: make sure the csproj watcher is registered before we touch it.
+    const extension = vscode.extensions.getExtension('miyana-tobari.shigan');
+    if (extension && !extension.isActive) await extension.activate();
+
+    await applyBaseline();
+  });
+
+  suiteTeardown(async () => {
+    if (fixtureDir) rmSync(fixtureDir, { recursive: true, force: true });
+    await applyBaseline();
+  });
+
+  teardown(async () => {
+    await restoreTouched();
+  });
+
+  test('editing Watch.csproj flips the #if DEBUG body without a reload', async () => {
+    await set('preprocessor.skipInactiveBrackets', false);
+    writeFileSync(join(fixtureDir, 'Watch.csproj'), WATCH_CSPROJ_DEBUG);
+    await openFixture(fixtureDir, 'watch.cs', 'csharp');
+    await waitForDebugBranch(false, 'DEBUG defined by the csproj');
+
+    // The file stays present, only its symbols change: the watcher must notice.
+    writeFileSync(join(fixtureDir, 'Watch.csproj'), WATCH_CSPROJ_NO_DEBUG);
+    await waitForDebugBranch(true, 'DEBUG removed but the csproj kept');
+  });
+
+  test('deleting Watch.csproj drops the project symbols', async () => {
+    await set('preprocessor.skipInactiveBrackets', false);
+    // Force fresh watcher events regardless of what a previous test left behind.
+    rmSync(join(fixtureDir, 'Watch.csproj'), { force: true });
+    writeFileSync(join(fixtureDir, 'Watch.csproj'), WATCH_CSPROJ_DEBUG);
+    await openFixture(fixtureDir, 'watch.cs', 'csharp');
+    await waitForDebugBranch(false, 'DEBUG defined by the csproj');
+
+    rmSync(join(fixtureDir, 'Watch.csproj'), { force: true });
+    await waitForDebugBranch(true, 'the csproj was deleted');
+  });
+
+  test('creating Watch.csproj defines DEBUG without a reload', async () => {
+    await set('preprocessor.skipInactiveBrackets', false);
+    // Deterministic "no project" start: even if an earlier test failed before
+    // its own delete (or left a stale project cache), writing then removing the
+    // csproj guarantees the watcher fires and the cache is cleared.
+    const csprojPath = join(fixtureDir, 'Watch.csproj');
+    writeFileSync(csprojPath, WATCH_CSPROJ_NO_DEBUG);
+    rmSync(csprojPath, { force: true });
+    await openFixture(fixtureDir, 'watch.cs', 'csharp');
+    await waitForDebugBranch(true, 'no csproj at all');
+
+    writeFileSync(csprojPath, WATCH_CSPROJ_DEBUG);
+    await waitForDebugBranch(false, 'the csproj was created with DEBUG');
+  });
+});
+
+function waitForDebugBranch(inactive: boolean, label: string): Promise<ComputedHint[]> {
+  return pollHints(
+    (hints) => bracketAt(hints, WATCH_DEBUG_BODY_CLOSE)?.inactive === inactive,
+    `${label}: expected the #if DEBUG body to be ${inactive ? 'inactive' : 'live'}`
+  );
+}
+
+/**
+ * Polls `computedHints()` until `predicate` holds. The csproj watcher is
+ * debounced (60 ms) and delivers events asynchronously, so a fixed delay cannot
+ * prove a refresh happened; this waits for the observable hint flip and fails
+ * with the last hints when the event never arrives.
+ */
+async function pollHints(
+  predicate: (hints: ComputedHint[]) => boolean,
+  message: string
+): Promise<ComputedHint[]> {
+  const deadline = Date.now() + WATCH_POLL_TIMEOUT_MS;
+  let hints = await computedHints();
+  for (;;) {
+    if (predicate(hints)) return hints;
+    if (Date.now() >= deadline) {
+      assert.fail(
+        `${message} (waited ${WATCH_POLL_TIMEOUT_MS} ms); last hints: ${JSON.stringify(hints)}`
+      );
+    }
+    await delay(WATCH_POLL_INTERVAL_MS);
+    hints = await computedHints();
+  }
+}

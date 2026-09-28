@@ -73,3 +73,5 @@ Open `sample.cs` in the Extension Development Host (language id `csharp`).
       the file's own `#define` is removed
 - [ ] With `shigan.csharp.inheritProject = true`, symbols from the nearest
       `.csproj` / `Directory.Build.props` drive the `#if` evaluation
+- [ ] Editing a `*.csproj` (e.g. adding or removing a symbol from
+      `DefineConstants`) refreshes the hints without reloading the window
