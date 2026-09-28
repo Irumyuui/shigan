@@ -100,9 +100,57 @@ export function macroAt(hints: ComputedHint[], line: number): ComputedHint | und
   return hints.find((hint) => hint.kind === 'macro' && hint.line === line);
 }
 
+export function conditionalAt(hints: ComputedHint[], line: number): ComputedHint | undefined {
+  return hints.find((hint) => hint.kind === 'conditional' && hint.line === line);
+}
+
 export async function computedHints(): Promise<ComputedHint[]> {
   const hints = await vscode.commands.executeCommand<ComputedHint[]>(
     'shigan.internal.computedHints'
   );
   return hints ?? [];
+}
+
+/** Poll cadence shared by {@link pollHints} / {@link pollUntil}. */
+export const WATCH_POLL_INTERVAL_MS = 100;
+export const WATCH_POLL_TIMEOUT_MS = 5000;
+
+/**
+ * Polls `computedHints()` until `predicate` holds. File watchers are debounced
+ * (60 ms) and deliver events asynchronously, so a fixed delay cannot prove a
+ * refresh happened; this waits for the observable hint flip and fails with the
+ * last hints when the event never arrives.
+ */
+export async function pollHints(
+  predicate: (hints: ComputedHint[]) => boolean,
+  message: string
+): Promise<ComputedHint[]> {
+  const deadline = Date.now() + WATCH_POLL_TIMEOUT_MS;
+  let hints = await computedHints();
+  for (;;) {
+    if (predicate(hints)) return hints;
+    if (Date.now() >= deadline) {
+      assert.fail(
+        `${message} (waited ${WATCH_POLL_TIMEOUT_MS} ms); last hints: ${JSON.stringify(hints)}`
+      );
+    }
+    await delay(WATCH_POLL_INTERVAL_MS);
+    hints = await computedHints();
+  }
+}
+
+/**
+ * Polls a non-hint predicate (e.g. the workspace folder count) on the same
+ * 100 ms / 5 s cadence as {@link pollHints}: `updateWorkspaceFolders` is applied
+ * asynchronously, so a fixed delay would be racy.
+ */
+export async function pollUntil(predicate: () => boolean, message: string): Promise<void> {
+  const deadline = Date.now() + WATCH_POLL_TIMEOUT_MS;
+  for (;;) {
+    if (predicate()) return;
+    if (Date.now() >= deadline) {
+      assert.fail(`${message} (waited ${WATCH_POLL_TIMEOUT_MS} ms)`);
+    }
+    await delay(WATCH_POLL_INTERVAL_MS);
+  }
 }

@@ -10,8 +10,12 @@ import {
   delay,
   macroAt,
   openFixture,
+  pollHints,
+  pollUntil,
   restoreTouched,
   set,
+  WATCH_POLL_INTERVAL_MS,
+  WATCH_POLL_TIMEOUT_MS,
 } from './support';
 
 /**
@@ -348,9 +352,6 @@ const WATCH_CSPROJ_NO_DEBUG = [
   '</Project>',
 ].join('\n');
 
-const WATCH_POLL_INTERVAL_MS = 100;
-const WATCH_POLL_TIMEOUT_MS = 5000;
-
 suite('Shigan C# project watching', () => {
   let fixtureDir = '';
 
@@ -505,46 +506,6 @@ function waitForDebugBranch(inactive: boolean, label: string): Promise<ComputedH
     (hints) => bracketAt(hints, WATCH_DEBUG_BODY_CLOSE)?.inactive === inactive,
     `${label}: expected the #if DEBUG body to be ${inactive ? 'inactive' : 'live'}`
   );
-}
-
-/**
- * Polls `computedHints()` until `predicate` holds. The csproj watcher is
- * debounced (60 ms) and delivers events asynchronously, so a fixed delay cannot
- * prove a refresh happened; this waits for the observable hint flip and fails
- * with the last hints when the event never arrives.
- */
-async function pollHints(
-  predicate: (hints: ComputedHint[]) => boolean,
-  message: string
-): Promise<ComputedHint[]> {
-  const deadline = Date.now() + WATCH_POLL_TIMEOUT_MS;
-  let hints = await computedHints();
-  for (;;) {
-    if (predicate(hints)) return hints;
-    if (Date.now() >= deadline) {
-      assert.fail(
-        `${message} (waited ${WATCH_POLL_TIMEOUT_MS} ms); last hints: ${JSON.stringify(hints)}`
-      );
-    }
-    await delay(WATCH_POLL_INTERVAL_MS);
-    hints = await computedHints();
-  }
-}
-
-/**
- * Polls a non-hint predicate (e.g. the workspace folder count) on the same
- * 100 ms / 5 s cadence as {@link pollHints}: `updateWorkspaceFolders` is applied
- * asynchronously, so a fixed delay would be racy.
- */
-async function pollUntil(predicate: () => boolean, message: string): Promise<void> {
-  const deadline = Date.now() + WATCH_POLL_TIMEOUT_MS;
-  for (;;) {
-    if (predicate()) return;
-    if (Date.now() >= deadline) {
-      assert.fail(`${message} (waited ${WATCH_POLL_TIMEOUT_MS} ms)`);
-    }
-    await delay(WATCH_POLL_INTERVAL_MS);
-  }
 }
 
 /**
