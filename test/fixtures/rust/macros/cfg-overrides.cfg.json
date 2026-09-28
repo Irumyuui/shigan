@@ -1,0 +1,6 @@
+{
+  "host": { "platform": "linux", "arch": "x64" },
+  "cfg": ["-unix", "feature=\"a\""],
+  "features": { "default": [], "declared": [], "implicit": [] },
+  "manifest": { "virtual": false, "workspaceMember": false }
+}

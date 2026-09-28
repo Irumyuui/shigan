@@ -1,11 +1,11 @@
-import { readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { extname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { computeHints } from '../../src/core/hints';
 import { syntaxFor } from '../../src/core/language';
 import { scan } from '../../src/core/lexer/tokenizer';
 import { Hint } from '../../src/core/types';
-import { predicates } from './support';
+import { predicates, rustHarness, RustCfgSeed } from './support';
 
 interface ExpectedHint {
   line: number;
@@ -17,10 +17,10 @@ interface ExpectedHint {
 }
 
 /** Fixture source extensions; the language itself comes from the directory. */
-const SOURCE_EXTENSIONS = ['.c', '.cpp', '.cs'];
+const SOURCE_EXTENSIONS = ['.c', '.cpp', '.cs', '.rs'];
 
 /** Languages, in directory order: `test/fixtures/<lang>/brackets/`. */
-const LANGUAGES = ['c', 'cpp', 'csharp'];
+const LANGUAGES = ['c', 'cpp', 'csharp', 'rust'];
 
 describe('bracket fixtures', () => {
   for (const languageId of LANGUAGES) {
@@ -37,14 +37,44 @@ describe('bracket fixtures', () => {
           trigger: 'always',
           showRange: true,
           showLabel: true,
-          ...predicates(text, {}, languageId),
-          scanned: scan(text, syntaxFor(languageId)),
+          ...inputsFor(text, dir, file, languageId),
         }).map(shape);
         expect(actual).toEqual(expected);
       });
     }
   }
 });
+
+/**
+ * Language-appropriate inputs for `computeHints`: the C family uses the
+ * tokenizer + preprocessor predicates, Rust uses the `scanRust` + `#[cfg]`
+ * harness (with an optional `<case>.cfg.json` seed).
+ */
+function inputsFor(
+  text: string,
+  dir: string,
+  file: string,
+  languageId: string
+): Record<string, unknown> {
+  if (languageId === 'rust') {
+    const harness = rustHarness(text, cfgSeedFor(dir, file));
+    return {
+      scanned: harness.scanned,
+      inactive: harness.inactive,
+      conditionals: harness.conditionals,
+    };
+  }
+  return {
+    scanned: scan(text, syntaxFor(languageId)),
+    ...predicates(text, {}, languageId),
+  };
+}
+
+/** Optional `<case>.cfg.json` next to a Rust fixture; `{}` when absent. */
+function cfgSeedFor(dir: string, file: string): RustCfgSeed {
+  const seedPath = join(dir, replaceExtension(file, '.cfg.json'));
+  return existsSync(seedPath) ? JSON.parse(readFileSync(seedPath, 'utf8')) : {};
+}
 
 /** Replaces the fixture's extension, e.g. `x.cpp` -> `x.expected.json`. */
 function replaceExtension(file: string, suffix: string): string {

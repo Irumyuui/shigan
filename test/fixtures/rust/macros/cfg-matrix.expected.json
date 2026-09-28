@@ -1,0 +1,14 @@
+[
+  { "line": 5, "text": " <- :3-6 #[cfg(unix)]", "kind": "conditional" },
+  { "line": 10, "text": " <- :8-11 #[cfg(windows)]", "kind": "conditional", "inactive": true },
+  { "line": 15, "text": " <- :13-16 #[cfg(feature = \"a\")]", "kind": "conditional" },
+  { "line": 20, "text": " <- :18-21 #[cfg(feature = \"b\")]", "kind": "conditional" },
+  { "line": 25, "text": " <- :23-26 #[cfg(feature = \"zz\")]", "kind": "conditional", "inactive": true },
+  { "line": 30, "text": " <- :28-31 #[cfg(test)]", "kind": "conditional" },
+  {
+    "line": 37,
+    "text": " <- :33-38 #[cfg(unix)] <- #[cfg(feature = \"a\")]",
+    "kind": "conditional"
+  },
+  { "line": 39, "text": " <- #[cfg(unix)]", "kind": "conditional" }
+]

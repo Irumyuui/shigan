@@ -1,0 +1,6 @@
+{
+  "host": { "platform": "linux", "arch": "x64" },
+  "features": { "default": ["a"], "declared": ["a", "b"], "implicit": ["dep-serde"] },
+  "manifest": { "virtual": false, "workspaceMember": false },
+  "cfg": []
+}

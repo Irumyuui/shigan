@@ -1,0 +1,4 @@
+[
+  { "line": 3, "text": " <- :1-4 #[cfg(unix)]", "kind": "conditional", "inactive": true },
+  { "line": 8, "text": " <- :6-9 #[cfg(feature = \"a\")]", "kind": "conditional" }
+]

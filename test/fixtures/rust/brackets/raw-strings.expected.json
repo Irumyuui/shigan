@@ -1,0 +1,9 @@
+[
+  {
+    "line": 9,
+    "text": " <- :8-10 fn main()",
+    "kind": "bracket",
+    "openLine": 7,
+    "closeLine": 9
+  }
+]
