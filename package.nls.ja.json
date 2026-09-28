@@ -14,6 +14,8 @@
   "shigan.csharp.inheritProject.description": "カレントファイルに最も近い .csproj/Directory.Build.props の DefineConstants も読み取ります。",
   "shigan.csharp.configuration.description": "C# プロジェクトファイルを評価するとき $(Configuration) に渡す構成。既定は Debug です。",
   "shigan.csharp.targetFramework.description": "暗黙の記号を導出するターゲットフレームワーク（例：net8.0）。空の場合はプロジェクトファイルから読み取ります。",
+  "shigan.rust.cfg.description": "#[cfg] 評価に使う追加の Rust cfg エントリ（例：[\"unix\", \"feature=\\\"serde\\\"\"]）。先頭に - を付けると false に固定できます。",
+  "shigan.rust.inheritCargo.description": "カレントファイルに最も近い Cargo.toml から feature 情報も読み取ります。",
   "shigan.preprocessor.trackFileDefines.description": "条件分岐が有効かどうかの判定に、カレントファイル内の #define/#undef を含めます。",
   "shigan.preprocessor.skipInactiveBrackets.description": "無効と判定された条件分岐（例： #if 0）内の括弧を対応付けの対象から除外します。",
   "shigan.preprocessor.skipInactiveDirectives.description": "#else/#elif/#endif が参照する分岐（#endif の場合は条件ブロック全体）が無効なとき、そのヒントを非表示にします。既定はオフです。指令行自体は有効なコードなので、完全に無効な #if 0 ブロックでもヒントは表示されます。",

@@ -70,6 +70,8 @@ they follow `editor.inlayHints.enabled` — there is no colour/opacity setting.
 | `shigan.csharp.inheritProject` | `true` | Read `DefineConstants` from the nearest `.csproj`/`Directory.Build.props` |
 | `shigan.csharp.configuration` | `"Debug"` | `$(Configuration)` used when evaluating the C# project file |
 | `shigan.csharp.targetFramework` | `""` | Target framework (e.g. `net8.0`); empty = read from the project file |
+| `shigan.rust.cfg` | `[]` | Extra Rust cfg entries for `#[cfg]`, e.g. `["unix"]`; `-name` forces false |
+| `shigan.rust.inheritCargo` | `true` | Read feature facts from the nearest `Cargo.toml` |
 | `shigan.preprocessor.trackFileDefines` | `true` | Evaluate `#define`/`#undef` found in the file |
 | `shigan.preprocessor.skipInactiveBrackets` | `true` | Do not match brackets in inactive branches |
 | `shigan.preprocessor.skipInactiveDirectives` | `false` | Hide directive hints that refer to an inactive branch/block |

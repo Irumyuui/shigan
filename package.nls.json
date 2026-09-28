@@ -14,6 +14,8 @@
   "shigan.csharp.inheritProject.description": "Also read DefineConstants from the nearest .csproj/Directory.Build.props for the current file.",
   "shigan.csharp.configuration.description": "Configuration passed as $(Configuration) when evaluating the C# project file. Defaults to Debug.",
   "shigan.csharp.targetFramework.description": "Target framework (e.g. net8.0) used to derive implicit symbols. Empty means read it from the project file.",
+  "shigan.rust.cfg.description": "Extra Rust cfg entries for #[cfg] evaluation, e.g. [\"unix\", \"feature=\\\"serde\\\"\"]; prefix an entry with - to force it false.",
+  "shigan.rust.inheritCargo.description": "Also read feature facts from the nearest Cargo.toml for the current file.",
   "shigan.preprocessor.trackFileDefines.description": "Evaluate #define/#undef found in the current file when deciding which conditional branches are active.",
   "shigan.preprocessor.skipInactiveBrackets.description": "Do not match brackets that sit inside a conditional branch which is known to be inactive (e.g. #if 0).",
   "shigan.preprocessor.skipInactiveDirectives.description": "Hide the hint on #else/#elif/#endif when the branch (or, for #endif, the whole block) it refers to is inactive. Off by default: a directive line is live code, so its hint is shown even for a fully inactive #if 0 block.",

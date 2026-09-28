@@ -21,6 +21,7 @@
     "cpp",
     "c++",
     "csharp",
+    "rust",
     "bracket",
     "preprocessor",
     "matching"
@@ -114,6 +115,19 @@
           "type": "string",
           "default": "",
           "description": "%shigan.csharp.targetFramework.description%"
+        },
+        "shigan.rust.cfg": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "%shigan.rust.cfg.description%"
+        },
+        "shigan.rust.inheritCargo": {
+          "type": "boolean",
+          "default": true,
+          "description": "%shigan.rust.inheritCargo.description%"
         },
         "shigan.preprocessor.trackFileDefines": {
           "type": "boolean",

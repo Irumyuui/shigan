@@ -26,6 +26,8 @@ export const BASELINE: Record<string, unknown> = {
   'csharp.inheritProject': true,
   'csharp.configuration': 'Debug',
   'csharp.targetFramework': '',
+  'rust.cfg': [],
+  'rust.inheritCargo': true,
   'preprocessor.trackFileDefines': true,
   'preprocessor.skipInactiveBrackets': true,
   'preprocessor.skipInactiveDirectives': false,

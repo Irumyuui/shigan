@@ -15,6 +15,10 @@ export interface ShiganConfig {
   csharpConfiguration: string;
   /** Target framework override used to derive implicit C# symbols. */
   csharpTargetFramework: string;
+  /** Extra Rust cfg entries (`shigan.rust.cfg`) for `#[cfg]` evaluation. */
+  rustCfg: string[];
+  /** Whether to read feature facts from the nearest Cargo.toml. */
+  rustInheritCargo: boolean;
   trackFileDefines: boolean;
   skipInactiveBrackets: boolean;
   skipInactiveDirectives: boolean;
@@ -51,6 +55,8 @@ export function readConfigFrom(get: SettingReader): ShiganConfig {
     csharpInheritProject: get<boolean>('csharp.inheritProject', true),
     csharpConfiguration: get<string>('csharp.configuration', 'Debug'),
     csharpTargetFramework: get<string>('csharp.targetFramework', ''),
+    rustCfg: get<string[]>('rust.cfg', []),
+    rustInheritCargo: get<boolean>('rust.inheritCargo', true),
     trackFileDefines: get<boolean>('preprocessor.trackFileDefines', true),
     skipInactiveBrackets: get<boolean>('preprocessor.skipInactiveBrackets', true),
     skipInactiveDirectives: get<boolean>('preprocessor.skipInactiveDirectives', false),

@@ -14,6 +14,8 @@
   "shigan.csharp.inheritProject.description": "同时读取当前文件最近的 .csproj/Directory.Build.props 中的 DefineConstants。",
   "shigan.csharp.configuration.description": "评估 C# 项目文件时作为 $(Configuration) 传入的配置。默认为 Debug。",
   "shigan.csharp.targetFramework.description": "用于推导隐式符号的目标框架（如 net8.0）。留空则从项目文件读取。",
+  "shigan.rust.cfg.description": "用于 #[cfg] 判断的额外 Rust cfg 条目，例如 [\"unix\", \"feature=\\\"serde\\\"\"]；条目以 - 开头可强制判定为 false。",
+  "shigan.rust.inheritCargo.description": "同时读取当前文件最近的 Cargo.toml 中的 feature 信息。",
   "shigan.preprocessor.trackFileDefines.description": "判断条件分支是否激活时，纳入当前文件内的 #define/#undef。",
   "shigan.preprocessor.skipInactiveBrackets.description": "不配对位于已知非激活条件分支（如 #if 0）内的括号。",
   "shigan.preprocessor.skipInactiveDirectives.description": "当 #else/#elif/#endif 所引用的分支（对 #endif 而言是整个条件块）处于非激活状态时，隐藏该提示。默认关闭：指令行本身是活代码，因此即使整个 #if 0 块都非激活，提示依然显示。",
