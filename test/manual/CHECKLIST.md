@@ -75,3 +75,23 @@ Open `sample.cs` in the Extension Development Host (language id `csharp`).
       `.csproj` / `Directory.Build.props` drive the `#if` evaluation
 - [ ] Editing a `*.csproj` (e.g. adding or removing a symbol from
       `DefineConstants`) refreshes the hints without reloading the window
+
+## Rust (`test/manual/sample.rs`)
+
+Open `sample.rs` in the Extension Development Host (language id `rust`). Expect
+` <- :a-b #[cfg(...)]` on each gated item's end line, `(inactive)` on
+host-mismatched items, and no hint inside raw strings, lifetimes or attributes.
+
+- [ ] Each `#[cfg(...)]`-gated function gets ` <- :a-b #[cfg(...)]` on its
+      closing `}` line, attached to the item, not the attribute
+- [ ] `#[cfg(unix)]` / `#[cfg(windows)]`: only the one that does not match the
+      host carries `(inactive)`, and its braces do not pair
+- [ ] `#[cfg(feature = "extra")]` shows as active/unknown (no `Cargo.toml`
+      around the sample) unless `shigan.rust.cfg` or a manifest decides it
+- [ ] `shigan.rust.cfg = ["-unix"]` marks the unix item `(inactive)` regardless
+      of the host, and its braces stop pairing
+- [ ] The `r#" ... { ( } ] ... "#` raw string produces no bracket hints
+- [ ] The `<'a>` / `&'a str` lifetime produces no char-literal or bracket hint
+- [ ] `borrow() { ... }` and `main() { ... }` are hinted as usual
+- [ ] The `#[cfg]` hints ride the `macros` switch: `shigan.show =
+      ["brackets"]` hides them

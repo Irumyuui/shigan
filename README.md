@@ -52,6 +52,16 @@ For C#, the conditional symbols come from the `DefineConstants` of the nearest
 and can be overridden through the `shigan.csharp.*` settings. Editing a
 `*.csproj` refreshes the hints automatically, without reloading the window.
 
+Rust is lexed by `src/core/lexer/rust.ts`, which tells lifetimes from char
+literals, understands `"…"` / `b"…"` / `c"…"` and raw `r#"…"#` strings, **nests**
+block comments, and treats `#[…]` / `#![…]` attributes as opaque while recording
+the `cfg` ones. Each `#[cfg(...)]`-gated item gets a clickable hint on the item's
+END line — ` <- :attr-end #[cfg(...)]`, with one clickable segment per attribute
+— and activity is **diagnostic-first**: rust-analyzer's `inactive_code`
+diagnostics win when present, with a lexical fallback computed from the nearest
+`Cargo.toml`'s default features plus a pure host-target inference. `shigan.rust.cfg`
+overrides either source, and editing a `Cargo.toml` refreshes without a reload.
+
 Hints are **inlay hints**, the only decoration-like UI that supports a click
 action. Their colour comes from the theme (`editorInlayHint.foreground`) and
 they follow `editor.inlayHints.enabled` — there is no colour/opacity setting.
@@ -63,7 +73,7 @@ they follow `editor.inlayHints.enabled` — there is no colour/opacity setting.
 | `shigan.enable` | `true` | Master switch |
 | `shigan.languages` | `["c","cpp","csharp","rust"]` | Active language ids |
 | `shigan.trigger` | `"cursor"` | `cursor` / `always` / `hover` / `off`, for both kinds |
-| `shigan.show` | `["brackets","macros"]` | Which kinds to hint |
+| `shigan.show` | `["brackets","macros"]` | Which kinds to hint; `macros` also gates the Rust `#[cfg]` gating hints |
 | `shigan.compileFlags` | `[]` | Compiler-style flags, e.g. `["-DDEBUG=1","-Iinclude","-std=c11"]` |
 | `shigan.inheritCompileCommands` | `false` | Also read `-D`/`-I`/`-std` from `compile_commands.json` |
 | `shigan.csharp.define` | `[]` | Extra C# symbols for `#if`, e.g. `["TRACE","DEBUG"]` |
@@ -123,6 +133,31 @@ Basic settings:
   `compile_commands.json` still needs a settings change (or a window reload) to
   take effect, and any `*.csproj` change clears the project caches of every
   workspace folder.
+- Rust `#[cfg]` gating only pairs whole **items** with a brace body:
+  semicolon-terminated items (`mod m;`, `use …;`, tuple structs,
+  `type`/`static`/`const` without a brace body) get NO hint, and `#[cfg]` inside
+  macro bodies, match arms, struct fields or statements is not paired (items
+  nested in `mod`/`impl`/`trait` ARE).
+- The Cargo reader parses only the nearest `Cargo.toml` (`[features]` plus the
+  implicit features of `optional = true` dependencies), so workspace feature
+  unification, `--features` / `--no-default-features`, resolver-v2 effects and
+  build-script (`cargo:rustc-cfg`) cfgs are not modeled; rust-analyzer covers
+  those when it is active.
+- `feature = "x"` is only decided **false** for a non-virtual manifest with no
+  ancestor manifest where `x` is absent from the feature universe;
+  declared-but-not-default stays active. Without a manifest every feature
+  predicate is unknown.
+- Platform cfg (`unix`/`windows`, `target_os`, `target_arch`, …) comes from the
+  detected host, so cross-compiling needs `shigan.rust.cfg`.
+- `test` and `debug_assertions` are never guessed — they show as active unless
+  `shigan.rust.cfg` decides them. This is a deliberate divergence from
+  rust-analyzer's defaults: a wrong guess would hide live code.
+- rust-analyzer's inactive code is read from open, local documents only, can be
+  disabled by the user (then the fallback disagrees), and briefly lags after an
+  edit. While a matching diagnostic exists it is authoritative and *replaces*
+  the lexical negatives.
+- Rust hints ride the existing `shigan.show` `macros` switch; there is no
+  separate Rust toggle.
 
 ## Development
 

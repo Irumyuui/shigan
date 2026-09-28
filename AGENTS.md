@@ -1,6 +1,7 @@
 # AGENTS.md
 
-VSCode extension for C, C++ and C#: clickable bracket and `#if/#else/#endif` pairing hints.
+VSCode extension for C, C++, C# and Rust: clickable bracket and conditional-pairing hints
+(`#if/#else/#endif` for the C family, `#[cfg(...)]` item gating for Rust).
 Hints are **inlay hints** at the end of a line; every segment is clickable and jumps to its target.
 
 The extension is **Shigan** (`shigan.*` settings, `shigan.*` command ids), and the repo folder matches. Only the
@@ -22,9 +23,9 @@ bunx vitest run test/unit/hints.test.ts -t "single-line"   # one test
 ```
 
 - **Fastest way to see behaviour**: `bun run inspect <file> [always|cursor]` prints every hint with its text,
-  `(inactive)` marker and per-segment jump targets. It picks the language from the file extension (`.c`/`.cpp`/`.cs`)
-  and honours `<file>.macros.json` seeds like the fixture harness.
-- Manual check: F5 (`.vscode/launch.json`) + `test/manual/sample.{c,cpp,cs}` + `CHECKLIST.md`.
+  `(inactive)` marker and per-segment jump targets. It picks the language from the file extension (`.c`/`.cpp`/`.cs`/`.rs`)
+  and honours `<file>.macros.json` (C family) / `<file>.cfg.json` (Rust) seeds like the fixture harness.
+- Manual check: F5 (`.vscode/launch.json`) + `test/manual/sample.{c,cpp,cs,rs}` + `CHECKLIST.md`.
 - CI: `.github/workflows/ci.yml` runs `just typecheck test-unit` and `xvfb-run --auto-servernum just test-integration` on ubuntu-latest for every branch push/PR, then `just package` and uploads the VSIX artifact. CI installs pinned just 1.58.0 in BOTH jobs; bump `JUST_VERSION` and `JUST_SHA256` together when upgrading, and keep the two install steps identical. Tag pushes are excluded (`branches: ['**'] filter`) - releasing is handled by `.github/workflows/release.yml` (see Releases).
 
 ## Releases
@@ -62,22 +63,42 @@ git tag -d v0.0.1
 - `src/core/**` is deliberately **`vscode`-free** (lexer, bracket matcher, preprocessor pairing, `#if` evaluator,
   settings mapping) so vitest can run it. Never import `vscode` there; the VSCode side lives in `src/render/**`,
   `src/config.ts`, `src/extension.ts`.
-- `src/core/language.ts` is the language seam: `syntaxFor(languageId)` returns a `LanguageSyntax` profile
-  (`c`, `cpp`, `csharp`) that `scan` and `evaluateConditionals` accept as an optional argument. Per-language lexical
-  rules live in the profile flags: C++ raw strings (`rawStrings`), C# verbatim/interpolated/raw literals
-  (`csharpLiterals`). C is the default and the fallback, so an absent profile scans exactly like C.
+- `src/core/language.ts` is the language seam: `languageKind(languageId)` is the single dispatch table
+  (`c`/`cpp`/`csharp`/`rust`; unknown ids fall back to `c`) and `syntaxFor(languageId)` returns a `LanguageSyntax`
+  profile (`c`, `cpp`, `csharp`) that `scan` and `evaluateConditionals` accept as an optional argument. Per-language
+  lexical rules live in the profile flags: C++ raw strings (`rawStrings`), C# verbatim/interpolated/raw literals
+  (`csharpLiterals`). Rust is a kind *without* a profile, so `syntaxFor` falls back to `C_SYNTAX` — callers must
+  dispatch on `languageKind` first. C is the default and the fallback, so an absent profile scans exactly like C.
 - C# conditional symbols come from `src/core/csproj.ts` (extracts `DefineConstants` and `TargetFramework`, derives
   the implicit target-framework symbols) via `src/csproj-source.ts` (nearest `.csproj` + `Directory.Build.props`,
   cached like `flags-source.ts`). A value-less `#define NAME` counts as `NAME=1`, and `true`/`false` are seeded as
   `#if` operands.
+- Rust runs a separate pipeline off the same seam:
+  - `src/core/lexer/rust.ts` (`scanRust`) yields `brackets` + `cfgs` (directives are always empty): lifetimes vs char
+    literals, `"…"`/`b"…"`/`c"…"`/`r#"…"#`/`br`/`cr` strings, NESTED block comments, and opaque `#[…]`/`#![…]`
+    attributes (only `cfg`/`cfg_attr` become tokens).
+  - `src/core/match/rust/cfg.ts` is the three-valued (Kleene) evaluator (`evaluateCfgPredicate`, `hostCfg`,
+    `parseRustCfgEntries`): `true`/`false` are decided, `undefined` is unknown and never marks code inactive.
+  - `src/core/match/rust/items.ts` (`pairCfgItems`) finds the item span each `#[cfg]` gates; `conditionals.ts`
+    (`rustConditionals`) turns spans into `kind: 'conditional'` hints and reports `inactiveLines`;
+    `diagnostics.ts` normalizes rust-analyzer's inactive-code diagnostics and merges them with the lexical result.
+  - `src/core/cargo.ts` (`parseCargoFeatures`, pure minimal TOML scan) + `src/cargo-source.ts` (`findCargoFeatures`,
+    `hasAncestorManifest`, per-directory cache) resolve `Cargo.toml` feature facts. Both caches are cleared by
+    `invalidate()` and `invalidateProjectFiles()`.
+  - `src/rust-diagnostics.ts` reads `vscode.languages.getDiagnostics` for the document; `src/service.ts` keys the
+    hint cache on a per-URI `diagnosticsRevision` bumped via `noteRustDiagnosticsChanged` on
+    `onDidChangeDiagnostics`, so hover and the diagnostic command never serve a stale activity answer.
 - `src/service.ts` owns macros, conditional evaluation and the caches. Macro sources are per language: C/C++ use
   `compileFlags` + optional `compile_commands.json`; C# uses project symbols + `shigan.csharp.define` + `compileFlags`
-  and never `compile_commands.json`. The inlay-hint provider, hover provider and diagnostic command all go through
-  `computeDocumentHints`; settings changes must call `invalidate()` (which also clears the csproj cache).
-- `src/extension.ts` watches `**/*.csproj` per workspace folder (create/change/delete) with its own debounce
+  and never `compile_commands.json`. Rust uses `shigan.rust.cfg` + a host inference + the nearest `Cargo.toml`. The
+  inlay-hint provider, hover provider and diagnostic command all go through `computeDocumentHints`; settings changes
+  must call `invalidate()` (which also clears the csproj and cargo caches).
+- `src/extension.ts` watches `**/*.csproj` AND `**/Cargo.toml` per workspace folder (create/change/delete) with its own debounce
   (`projectTimer`, deliberately separate from the cursor-triggered `refreshTimer`) and calls
   `invalidateProjectFiles()` — the targeted counterpart of `invalidate()` that leaves the `compile_commands` cache
   alone. Watchers are rebuilt on `onDidChangeWorkspaceFolders` and disposed through a single `Disposable`.
+  `package.json` declares `extensionKind: ["workspace"]`, so the extension runs where the sources (and their
+  `Cargo.toml`/`.csproj`) live.
 - Rendering is inlay hints on purpose: only `InlayHintLabelPart.command` supports click-to-jump, so colours come from
   the theme (`editorInlayHint.foreground`) and there is no colour setting.
 - A hint is a `HintPart[]` (`text`, `target`, `title`); `hint.text` must stay the concatenation of the part texts
@@ -99,9 +120,24 @@ git tag -d v0.0.1
   literals (a computed message cannot be extracted).
 - **A new setting touches 6+ files**: `package.json`, the three `package.nls*.json`, `src/core/settings.ts`,
   `test/unit/config.test.ts`, `test/integration/settings.test.ts` (plus README).
-- **Language support is on by default**: `shigan.languages` defaults to `["c","cpp","csharp"]` and `package.json`
-  lists `onLanguage:` for each. Adding a language touches `src/core/language.ts` (the profile), both of those places,
-  `src/core/settings.ts` and `test/unit/config.test.ts`.
+- **Language support is on by default**: `shigan.languages` defaults to `["c","cpp","csharp","rust"]` and `package.json`
+  lists `onLanguage:` for each. Adding a language touches `src/core/language.ts` (the profile/kind), both of those
+  places, `src/core/settings.ts` and `test/unit/config.test.ts`.
+- **Rust `#[cfg]` spans are item-scoped by design.** `pairCfgItems` (`src/core/match/rust/items.ts`) only reports an
+  item whose first depth-equal `{` (and its match) is within 300 lines, so semicolon-terminated items
+  (`mod m;`, `use …;`, tuple structs, `type`/`static`/`const` without a brace body) and `#[cfg]` on macro bodies,
+  match arms, struct fields or statements produce NO span — items nested in `mod`/`impl`/`trait` do. The hint carries
+  `kind: 'conditional'` but is still emitted under the `macros` `shigan.show` switch; there is no Rust-specific toggle.
+- **Rust activity is diagnostic-first, lexical-second.** `mergeRustInactiveLines` treats rust-analyzer's
+  `inactive_code` diagnostics as authoritative when a matching diagnostic exists OR rust-analyzer is active
+  (`src/rust-diagnostics.ts`); authoritative diagnostics *replace* the lexical negatives (they never union), and
+  without an authoritative source they only add inactive lines. Explicit `shigan.rust.cfg`-decided spans win over
+  both, and diagnostics never synthesize hints — only activity. `src/service.ts` keeps the per-URI
+  `diagnosticsRevision` in the hint-cache key so hover/`computedHints` never read a stale answer.
+- **Cargo facts are two files**: `src/core/cargo.ts` is the pure minimal TOML scan (`parseCargoFeatures`: `[features]`,
+  implicit `optional = true` features, the `default` closure, `virtual`), and `src/cargo-source.ts` walks up to the
+  nearest `Cargo.toml` with a per-directory cache (`findCargoFeatures`) plus `hasAncestorManifest`. `invalidate()`
+  and `invalidateProjectFiles()` both call `clearCargoCache()`.
 - **Integration tests restore settings by writing defaults**, never `update(key, undefined)` — removal proved
   unreliable and left `shigan.enable: false` behind, silently emptying every later test. Copy the `BASELINE` pattern
   in `test/integration/settings.test.ts`.
@@ -125,19 +161,28 @@ git tag -d v0.0.1
 - `test/unit/performance.test.ts` is a scale guard, not a benchmark: synthetic 20k–100k-line documents with
   deliberately generous wall-clock budgets. Keep the budgets loose (they catch superlinear regressions, not
   micro-timing) — tightening them makes the suite flaky.
-- `test/fixtures/{c,cpp,csharp}/{brackets,macros}/` + `.expected.json` golden files; the language comes from the
-  directory, never from the extension, and a macro fixture may add `<case>.macros.json` to seed macros. Verify
-  expectations by hand or with `bun run inspect` — never blind-snapshot.
+- `test/fixtures/{c,cpp,csharp,rust}/{brackets,macros}/` + `.expected.json` golden files; the language comes from the
+  directory, never from the extension. A macro fixture may add `<case>.macros.json` (C family) or `<case>.cfg.json`
+  (Rust) to seed evaluation; the Rust seed is platform-independent by design (`host`/`features`/`manifest`/`cfg` from
+  the JSON, never `process`). `fixtures.test.ts`/`macros-fixtures.test.ts` pick `scan`+`predicates` vs
+  `scanRust`+`rustHarness` per language. Verify expectations by hand or with `bun run inspect` — never blind-snapshot.
 - Language-specific unit tests are split per language (`evaluate-csharp.test.ts`, `flags-cpp.test.ts`,
-  `cpp-scan.test.ts`, `csharp-scan.test.ts`, `csproj*.test.ts`); `language.test.ts` covers the profile mapping.
+  `cpp-scan.test.ts`, `csharp-scan.test.ts`, `csproj*.test.ts`, plus the Rust `cfg`/`conditionals`/`diagnostics` and
+  `cargo*` suites); `language.test.ts` covers the kind dispatch and profile mapping.
 - `test/integration/support.ts` holds the shared `BASELINE` / `openFixture` / hint helpers. Every integration suite
   owns its own `test/integration/workspace/fixture/<suite>` directory and cleans only that — never the shared
   `fixture/` root, which would delete another suite's files.
 - `test/integration/**` runs in a real VSCode; `.vscode-test.mjs` globs `out/integration/**/*.test.js`, built from
   `test/integration/*.test.ts`.
-- `test/integration/{cpp,csharp}.test.ts` cover per-language routing, C# project symbols and the csproj watcher
-  (single-root create/change/delete plus a multi-root folder-add rebuild). The test host runs with
+- `test/integration/{cpp,csharp,rust}.test.ts` cover per-language routing, C# project symbols / the csproj watcher
+  (single-root create/change/delete plus a multi-root folder-add rebuild), and the Rust suite. The test host runs with
   `--disable-extensions`, so `openFixture` calls `vscode.languages.setTextDocumentLanguage` to force the language id.
+- `test/integration/rust.test.ts` (suite `Shigan Rust`, 5 tests) owns `fixture/rust` and covers: routing + a Cargo
+  default-feature item pairing; `rust.inheritCargo = false` turning an undeclared feature unknown; `rust.cfg = ["-unix"]`
+  deactivating an item and its brackets; the `Cargo.toml` watcher (change/delete/create); and a diagnostics stub. CI has
+  no rust-analyzer, so that test publishes its own `vscode.DiagnosticCollection` with `source: 'rust-analyzer'` and
+  polls the hint flip — including the kebab-case code spelling, a non-matching `rustc` source, and the authority
+  side effect (a lexical negative elsewhere flips active while a matching diagnostic exists).
 - `vscode.executeInlayHintProvider` works in the test host: `extension.test.ts` uses it to assert the real provider
   output (label parts and tooltips), which the diagnostic command alone cannot cover.
 - `test/manual/**` is only for F5 self-testing.

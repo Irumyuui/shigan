@@ -16,10 +16,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - C++ and C# golden fixtures, integration coverage and manual samples.
 - `#region` / `#endregion` pairing hints, shown under the same `macros` switch as `#if` (never flagged inactive).
 - Creating, editing or deleting a `*.csproj` refreshes the hints automatically, without reloading the window.
+- Rust support: `.rs` files are lexed separately (lifetimes vs char literals, `"…"` / `b"…"` / `c"…"` / raw `r#"…"#` strings, nested block comments, opaque `#[…]` attributes) and each `#[cfg(...)]`-gated item gets a clickable gating hint on the item's end line, with one clickable segment per attribute.
+- Rust conditional activity is diagnostic-first: rust-analyzer's `inactive_code` diagnostics are authoritative when present, with a lexical fallback from the nearest `Cargo.toml`'s default features plus a host-target inference; `shigan.rust.cfg` overrides either source.
+- `shigan.rust.cfg` for extra Rust cfg entries and `shigan.rust.inheritCargo` to toggle reading the nearest `Cargo.toml`.
+- Creating, editing or deleting a `Cargo.toml` refreshes the hints automatically, without reloading the window.
+- The extension declares `extensionKind: ["workspace"]`, so it runs alongside the workspace's `.csproj` / `Cargo.toml` files.
 
 ### Changed
 
-- `shigan.languages` now defaults to `["c","cpp","csharp"]`, with matching `onLanguage:cpp` and `onLanguage:csharp` activation events.
+- `shigan.languages` now defaults to `["c","cpp","csharp","rust"]`, with matching `onLanguage:cpp`, `onLanguage:csharp` and `onLanguage:rust` activation events.
 - A lone `{` after a wrapped type declaration (base list / `where` clause) is now labelled with the declaration line (e.g. `class Foo`) instead of the last continuation line.
 
 ### Fixed
@@ -29,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Internal
 
 - Added a language profile seam (`src/core/language.ts`): the VSCode-free core takes a `LanguageSyntax` instead of assuming C.
+- Added a language-neutral `ConditionalModel` seam and a single `languageKind()` dispatch on top of `syntaxFor()`, plus the Rust modules (`src/core/lexer/rust.ts`, `src/core/match/rust/{cfg,items,conditionals,diagnostics}.ts`, `src/core/cargo.ts`, `src/cargo-source.ts`).
 
 ## [0.0.3] - 2026-09-28
 
