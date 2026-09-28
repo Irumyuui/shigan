@@ -4,7 +4,7 @@
   "configuration.title": "Shigan",
 
   "shigan.enable.description": "Enable Shigan.",
-  "shigan.languages.description": "Language ids Shigan is active for. Defaults to C only.",
+  "shigan.languages.description": "Language ids Shigan is active for. Defaults to C and C++.",
   "shigan.trigger.markdownDescription": "When to show pair hints (applies to both kinds).\n\n- `cursor`: only the pair the caret is on. A bracket needs the caret on/next to it; a directive needs the caret anywhere on its line.\n- `always`: every bracket pair that spans more than one line, plus every directive pair — nothing is hidden because of `#if` state. Brackets inside a disabled branch are simply not matched (see `shigan.preprocessor.skipInactiveBrackets`).\n- `hover`: in the hover tooltip only.\n- `off`: never.\n\nEach segment of a hint is clickable (`}` -> `{`; `#else`/`#elif` -> the previous directive; on an `#endif`, `<-` -> the preceding branch and `<=` -> the opening `#if`).",
   "shigan.show.description": "Which kinds of pairs to hint: 'brackets' = ()[]{} and 'macros' = #if/#elif/#else/#endif.",
   "shigan.compileFlags.itemDescription": "A compiler-style flag, e.g. -DFOO=1, -UBAR, -std=c11, -Iinclude.",

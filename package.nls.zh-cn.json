@@ -4,7 +4,7 @@
   "configuration.title": "Shigan",
 
   "shigan.enable.description": "启用 Shigan。",
-  "shigan.languages.description": "Shigan 生效的语言 ID，默认仅 C。",
+  "shigan.languages.description": "Shigan 生效的语言 ID，默认为 C 和 C++。",
   "shigan.trigger.markdownDescription": "何时显示配对提示（对括号与宏同时生效）。\n\n- `cursor`：仅显示光标所在的配对。括号要求光标位于括号上或紧邻；指令要求光标在其所在行的任意位置。\n- `always`：所有跨行的括号配对，以及全部指令配对；不会因为 `#if` 状态而隐藏。被禁用分支里的括号本身就不参与配对（见 `shigan.preprocessor.skipInactiveBrackets`）。\n- `hover`：仅在悬停提示中显示。\n- `off`：从不显示。\n\n提示的每一段都可点击跳转（`}` -> `{`；`#else`/`#elif` -> 上一条指令；`#endif` 的 `<-` -> 前一段、`<=` -> 开头的 `#if`）。",
   "shigan.show.description": "要显示哪几类配对：'brackets' = ()[]{}，'macros' = #if/#elif/#else/#endif。",
   "shigan.compileFlags.itemDescription": "一条编译器风格选项，例如 -DFOO=1、-UBAR、-std=c11、-Iinclude。",

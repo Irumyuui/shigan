@@ -24,7 +24,7 @@ const FILE_DEFINE = '#define X 1\n#if X\nint a;\n#elif 0\nint b;\n#endif\n';
  */
 const BASELINE: Record<string, unknown> = {
   enable: true,
-  languages: ['c'],
+  languages: ['c', 'cpp'],
   trigger: 'always',
   show: ['brackets', 'macros'],
   compileFlags: [],

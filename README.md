@@ -55,7 +55,7 @@ they follow `editor.inlayHints.enabled` — there is no colour/opacity setting.
 | Key | Default | Description |
 | --- | --- | --- |
 | `shigan.enable` | `true` | Master switch |
-| `shigan.languages` | `["c"]` | Active language ids |
+| `shigan.languages` | `["c","cpp"]` | Active language ids |
 | `shigan.trigger` | `"cursor"` | `cursor` / `always` / `hover` / `off`, for both kinds |
 | `shigan.show` | `["brackets","macros"]` | Which kinds to hint |
 | `shigan.compileFlags` | `[]` | Compiler-style flags, e.g. `["-DDEBUG=1","-Iinclude","-std=c11"]` |
