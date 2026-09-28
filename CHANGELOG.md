@@ -59,5 +59,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - English, Simplified Chinese and Japanese UI localization.
 
 [Unreleased]: https://github.com/Irumyuui/shigan/compare/v0.0.3...HEAD
+[0.0.3]: https://github.com/Irumyuui/shigan/releases/tag/v0.0.3
 [0.0.2]: https://github.com/Irumyuui/shigan/releases/tag/v0.0.2
 [0.0.1]: https://github.com/Irumyuui/shigan/releases/tag/v0.0.1
