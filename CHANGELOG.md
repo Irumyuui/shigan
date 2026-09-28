@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `shigan.csharp.define` for extra C# preprocessor symbols.
 - C++ and C# golden fixtures, integration coverage and manual samples.
 - `#region` / `#endregion` pairing hints, shown under the same `macros` switch as `#if` (never flagged inactive).
+- Creating, editing or deleting a `*.csproj` refreshes the hints automatically, without reloading the window.
 
 ### Changed
 
