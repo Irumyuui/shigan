@@ -48,6 +48,19 @@ describe('parseDefineConstants', () => {
     expect(symbols(xml)).toEqual(['FIRST', 'SECOND', 'THIRD']);
   });
 
+  it('seeds the accumulator with initialSymbols so files can chain', () => {
+    const xml = `
+      <Project>
+        <PropertyGroup>
+          <DefineConstants>$(DefineConstants);TRACE</DefineConstants>
+        </PropertyGroup>
+      </Project>`;
+
+    const result = parseDefineConstants(xml, { initialSymbols: new Set(['DEBUG']) });
+
+    expect(Array.from(result.symbols).sort()).toEqual(['DEBUG', 'TRACE']);
+  });
+
   it('expands $(Configuration) and $(Platform) inside values', () => {
     const xml = `
       <Project>

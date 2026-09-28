@@ -18,6 +18,13 @@ export interface CsprojOptions {
   platform?: string;
   /** Overrides the target framework found in the XML. */
   targetFramework?: string;
+  /**
+   * Symbols to seed the accumulator with before scanning. Used to chain
+   * multiple project files: `$(DefineConstants)` in a later file then sees the
+   * symbols collected from an earlier one. Seeded symbols are always present in
+   * {@link CsprojResult.symbols}.
+   */
+  initialSymbols?: Iterable<string>;
 }
 
 /** Result of scanning a project file. */
@@ -48,7 +55,8 @@ const NETFRAMEWORK_VERSIONS = [
  *
  * Every `<DefineConstants>` value is appended (document order), honouring
  * `Condition` on both the element and its enclosing `<PropertyGroup>`.
- * `$(DefineConstants)` expands to the symbols accumulated so far;
+ * `$(DefineConstants)` expands to the symbols accumulated so far (including any
+ * provided via {@link CsprojOptions.initialSymbols});
  * `$(Configuration)`, `$(Platform)` and `$(TargetFramework)` expand to the
  * matching option/XML value. Any other `$(...)` is left untouched.
  *
@@ -61,6 +69,9 @@ export function parseDefineConstants(xml: string, options: CsprojOptions = {}): 
   const targetFramework = options.targetFramework ?? findTargetFramework(xml);
 
   const symbols = new Set<string>();
+  if (options.initialSymbols) {
+    for (const symbol of options.initialSymbols) symbols.add(symbol);
+  }
 
   const resolveVariable = (name: string): string | undefined => {
     switch (name) {
