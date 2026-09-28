@@ -7,6 +7,7 @@ test/integration/workspace/fixture/
 test/integration/shigan-test.code-workspace
 test/integration/workspace-secondary/
 test/integration/workspace-multiroot/
+test/integration/workspace-rust-multiroot/
 *.vsix
 .vscode
 artifacts
