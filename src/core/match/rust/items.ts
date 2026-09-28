@@ -57,7 +57,11 @@ const HEAD_LINE_START = /^(?:#!?\[|\/\/\/|\/\/!|\/\*!|\/\*\*)/;
  *
  * Performance: a single line-indexed pass over the brackets (see
  * {@link BracketIndex}) replaces the former per-attribute rescan of the whole
- * file, so this is linear in the document size rather than O(cfgs × brackets).
+ * file, and macro-body detection is a comment-masked forward pass indexed per
+ * line (see {@link maskComments} / {@link nearestMacroHeadBefore}) rather than a
+ * backward walk from each opener. Both are linear in the document size, so a
+ * one-line-per-item file with `#[…]`-prefixed lines no longer degrades to
+ * O(cfgs × lines).
  */
 export function pairCfgItems(scanned: ScanResult, lines: readonly string[]): CfgItemSpan[] {
   const all = scanned.cfgs ?? [];
@@ -482,37 +486,253 @@ function attrKey(attr: CfgAttributeToken): string {
 }
 
 /**
- * True when the bracket token at `tokenIndex` opens a macro definition's body:
- * the code ending at the token is a `macro_rules!` / `macro` head (same line, or
- * the nearest preceding non-blank, non-comment, non-attribute line). This makes
- * the exclusion independent of where the delimiter sits.
+ * True when `token` opens a macro definition's body: the comment-masked code
+ * ending at the token is a `macro_rules!` / `macro` head (same line), or the
+ * nearest preceding non-transparent line is — blank, comment-only, doc-comment
+ * and attribute-only lines are transparent. Backed by the forward-pass
+ * {@link maskComments} / {@link nearestMacroHeadBefore} indexes, so this is O(1)
+ * per opener and the whole scan stays linear even when the openers sit on lines
+ * that all start with `#[`.
  */
 function isMacroBodyOpener(
-  brackets: readonly BracketToken[],
-  tokenIndex: number,
-  lines: readonly string[]
+  token: BracketToken,
+  code: readonly string[],
+  nearestHead: readonly boolean[]
 ): boolean {
-  const token = brackets[tokenIndex];
   if (!OPENERS.has(token.char)) return false;
 
-  const sameLine = (lines[token.line] ?? '').slice(0, token.col).trimEnd();
+  const sameLine = (code[token.line] ?? '').slice(0, token.col).trimEnd();
   if (MACRO_HEAD_TAIL.test(sameLine)) return true;
 
-  for (let line = token.line - 1; line >= 0; line--) {
-    const trimmed = (lines[line] ?? '').trim();
-    if (trimmed === '') continue;
-    if (
-      trimmed.startsWith('//') ||
-      trimmed.startsWith('*') ||
-      trimmed.startsWith('/*') ||
-      trimmed.startsWith('#[') ||
-      trimmed.startsWith('#![')
-    ) {
-      continue;
+  return nearestHead[token.line] ?? false;
+}
+
+/**
+ * Comment-masked copy of `lines`: line/block comments (and string/raw-string
+ * bodies) are replaced by spaces while every line keeps its length and the line
+ * count stays identical, so a bracket token's `col` still indexes the masked
+ * line. This is what stops a `macro_rules!` spelling inside a comment or a
+ * string from being read as a real macro head — the regression where a
+ * commented-out `macro_rules! fake` inside a block comment swallowed the next
+ * real item's cfg hints.
+ */
+function maskComments(lines: readonly string[]): string[] {
+  const masked: string[] = [];
+  let block = 0; // open nested block-comment depth
+  let raw = -1; // open raw-string hash count, -1 when none
+
+  for (const text of lines) {
+    const chars = text.split('');
+    let i = 0;
+    while (i < text.length) {
+      if (block > 0) {
+        if (text[i] === '/' && text[i + 1] === '*') {
+          chars[i] = ' ';
+          chars[i + 1] = ' ';
+          block++;
+          i += 2;
+          continue;
+        }
+        if (text[i] === '*' && text[i + 1] === '/') {
+          chars[i] = ' ';
+          chars[i + 1] = ' ';
+          block--;
+          i += 2;
+          continue;
+        }
+        chars[i] = ' ';
+        i++;
+        continue;
+      }
+      if (raw >= 0) {
+        let closes = text[i] === '"';
+        for (let h = 0; closes && h < raw; h++) {
+          if (text[i + 1 + h] !== '#') closes = false;
+        }
+        const end = i + 1 + raw;
+        for (let k = i; k < (closes ? end : i + 1); k++) chars[k] = ' ';
+        if (closes) raw = -1;
+        i = closes ? end : i + 1;
+        continue;
+      }
+
+      const ch = text[i];
+      if (ch === '/' && text[i + 1] === '/') {
+        for (let k = i; k < text.length; k++) chars[k] = ' ';
+        break;
+      }
+      if (ch === '/' && text[i + 1] === '*') {
+        chars[i] = ' ';
+        chars[i + 1] = ' ';
+        block = 1;
+        i += 2;
+        continue;
+      }
+
+      const rawStart = tryRawString(text, i);
+      if (rawStart) {
+        const { hashes, bodyStart } = rawStart;
+        const close = findRawClose(text, bodyStart, hashes);
+        if (close < 0) {
+          for (let k = i; k < text.length; k++) chars[k] = ' ';
+          raw = hashes;
+          i = text.length;
+        } else {
+          for (let k = i; k < close; k++) chars[k] = ' ';
+          i = close;
+        }
+        continue;
+      }
+
+      if (ch === '"') {
+        const end = skipStringInLine(text, i);
+        for (let k = i; k < end; k++) chars[k] = ' ';
+        i = end;
+        continue;
+      }
+      if (ch === "'") {
+        i = skipQuoteInLine(text, i);
+        continue;
+      }
+      i++;
     }
-    return MACRO_HEAD_TAIL.test(trimmed);
+    masked.push(chars.join(''));
   }
-  return false;
+
+  return masked;
+}
+
+/**
+ * Per line, whether the nearest preceding non-transparent line carries a macro
+ * head. One forward pass: a blank/comment-only/attribute-only line is
+ * transparent and preserves the carried answer; a macro-head line sets it; any
+ * other code line clears it. This replaces the former per-opener backward walk
+ * that rescanned to line 0 for one-line `#[…]` items.
+ */
+function nearestMacroHeadBefore(code: readonly string[]): boolean[] {
+  const result = new Array<boolean>(code.length).fill(false);
+  let pending = false;
+  for (let line = 0; line < code.length; line++) {
+    result[line] = pending;
+    const trimmed = (code[line] ?? '').trim();
+    if (trimmed === '') continue;
+    if (MACRO_HEAD_TAIL.test(trimmed)) pending = true;
+    else if (!isAttributeOnly(trimmed)) pending = false;
+  }
+  return result;
+}
+
+/**
+ * True when a comment-masked, trimmed line holds nothing but one or more
+ * `#[…]` / `#![…]` attributes (an unterminated attribute counts, since it just
+ * continues on the next line). Such lines are transparent for the macro-head
+ * chain. A line that carries code after its attributes (`#[cfg(x)] fn f() {}`)
+ * is not.
+ */
+function isAttributeOnly(trimmed: string): boolean {
+  let i = 0;
+  while (i < trimmed.length) {
+    while (i < trimmed.length && (trimmed[i] === ' ' || trimmed[i] === '\t')) i++;
+    if (i >= trimmed.length) return true;
+    if (trimmed[i] !== '#') return false;
+
+    let j = i + 1;
+    if (trimmed[j] === '!') j++;
+    if (trimmed[j] !== '[') return false;
+
+    let depth = 0;
+    while (j < trimmed.length) {
+      const ch = trimmed[j];
+      if (ch === '"') {
+        j = skipStringInLine(trimmed, j);
+        continue;
+      }
+      if (ch === '[') {
+        depth++;
+        j++;
+        continue;
+      }
+      if (ch === ']') {
+        depth--;
+        j++;
+        if (depth === 0) break;
+        continue;
+      }
+      j++;
+    }
+    if (depth !== 0) return true; // attribute continues on a later line
+    i = j;
+  }
+  return true;
+}
+
+/** The raw string starting at `i` (`r"…"`, `r#"…"#`, `br"…"`, `cr"…"`), if any. */
+function tryRawString(
+  text: string,
+  i: number
+): { hashes: number; bodyStart: number } | undefined {
+  let p = i;
+  if (text[p] === 'b' || text[p] === 'c') p++;
+  if (text[p] !== 'r') return undefined;
+  let hash = p + 1;
+  while (text[hash] === '#') hash++;
+  if (text[hash] !== '"') return undefined; // `r#ident`, not a raw string
+  return { hashes: hash - (p + 1), bodyStart: hash + 1 };
+}
+
+/** Index just past the `"` + `hashes` `#` closing the raw string, or -1. */
+function findRawClose(text: string, from: number, hashes: number): number {
+  for (let j = from; j < text.length; j++) {
+    if (text[j] !== '"') continue;
+    let closes = true;
+    for (let h = 0; h < hashes; h++) {
+      if (text[j + 1 + h] !== '#') {
+        closes = false;
+        break;
+      }
+    }
+    if (closes) return j + 1 + hashes;
+  }
+  return -1;
+}
+
+/**
+ * End index of the `'`-construct at `col`: a char literal (with escape, or a
+ * single token) or a lifetime, so a quote inside it cannot start a string. Mirrors
+ * the lexer's `skipQuote`, kept line-local (neither form spans a line in Rust).
+ */
+function skipQuoteInLine(text: string, col: number): number {
+  const next = text[col + 1];
+
+  if (next === '\\') {
+    let j = col + 2;
+    if (j < text.length && text[j] !== '\n') j++;
+    while (j < text.length && text[j] !== "'" && text[j] !== '\n') j++;
+    return text[j] === "'" ? j + 1 : j;
+  }
+
+  if (next !== undefined && isIdentStartChar(next)) {
+    let j = col + 1;
+    while (j < text.length && isIdentChar(text[j])) j++;
+    if (text[j] === "'") return j + 1; // char literal
+    if (text[j] === '#' && isIdentStartChar(text[j + 1] ?? '')) {
+      j++;
+      while (j < text.length && isIdentChar(text[j])) j++;
+    }
+    return j; // lifetime
+  }
+
+  let j = col + 1;
+  while (j < text.length && text[j] !== "'" && text[j] !== '\n') j++;
+  return text[j] === "'" ? j + 1 : j;
+}
+
+function isIdentStartChar(ch: string): boolean {
+  return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || ch === '_';
+}
+
+function isIdentChar(ch: string): boolean {
+  return isIdentStartChar(ch) || (ch >= '0' && ch <= '9');
 }
 
 /**
@@ -526,7 +746,7 @@ function leadingHeadStart(lines: readonly string[], firstLine: number): number {
   for (let line = firstLine - 1; line >= 0; line--) {
     const trimmed = (lines[line] ?? '').trim();
     if (trimmed === '') break;
-    if (HEAD_LINE_START.test(trimmed)) {
+    if (isHeadAttributeLine(trimmed)) {
       start = line;
       continue;
     }
@@ -541,6 +761,20 @@ function leadingHeadStart(lines: readonly string[], firstLine: number): number {
     return firstLine;
   }
   return start;
+}
+
+/**
+ * True when `trimmed` is a leading attribute/doc-comment line to absorb into
+ * `headLines`: a line doc comment, a block doc comment, or an `#[…]` / `#![…]`
+ * attribute with no code after it (an unterminated attribute counts). A
+ * one-line item that merely starts with `#[cfg(…)]` is NOT absorbable — treating
+ * it as one made the walk above a row of one-line items rescan to line 0
+ * (quadratic) and widened `headLines` to unrelated earlier items.
+ */
+function isHeadAttributeLine(trimmed: string): boolean {
+  if (/^(?:\/\/\/|\/\/!|\/\*!|\/\*\*)/.test(trimmed)) return true;
+  if (trimmed.startsWith('#[') || trimmed.startsWith('#![')) return isAttributeOnly(trimmed);
+  return false;
 }
 
 /**
@@ -601,10 +835,13 @@ function buildBracketIndex(
   const opensByDepth = new Map<number, number[]>();
 
   // A macro body's delimiter may be `(`, `[` or `{`, and may not share a line
-  // with the `macro_rules!`/`macro` head; detect the opener structurally.
+  // with the `macro_rules!`/`macro` head; detect the opener structurally via the
+  // comment-masked forward-pass index (O(1) per opener).
+  const code = maskComments(lines);
+  const nearestHead = nearestMacroHeadBefore(code);
   const macroOpenerOffsets = new Set<number>();
   for (let i = 0; i < count; i++) {
-    if (!isMacroBodyOpener(brackets, i, lines)) continue;
+    if (!isMacroBodyOpener(brackets[i], code, nearestHead)) continue;
     if (byOpenOffset.has(brackets[i].offset)) macroOpenerOffsets.add(brackets[i].offset);
   }
 

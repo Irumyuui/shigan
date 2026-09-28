@@ -203,6 +203,50 @@ describe('pairCfgItems (macro bodies whose delimiter is not on the header line)'
       { attrLine: 5, attrLines: [5], headLines: [5], displays: ['#[cfg(unix)]'], endLine: 6 },
     ]);
   });
+
+  it('ignores a body behind a same-line block comment after the head', () => {
+    expect(spansFor('macro_rules! m /* c */ {\n    #[cfg(unix)]\n    fn w() {}\n}\n')).toEqual([]);
+  });
+
+  it('ignores a body behind a line comment after the head', () => {
+    expect(spansFor('macro_rules! m // c\n{\n    #[cfg(unix)]\n    fn w() {}\n}\n')).toEqual([]);
+  });
+
+  it('ignores a body when an attribute shares the head line', () => {
+    expect(
+      spansFor('#[macro_export] macro_rules! m\n{\n    #[cfg(unix)]\n    fn w() {}\n}\n')
+    ).toEqual([]);
+  });
+
+  it('ignores a body behind a block comment sharing the head line', () => {
+    expect(
+      spansFor('pub macro_rules! m /* c */ (\n    #[cfg(unix)]\n    fn w() {}\n);\n')
+    ).toEqual([]);
+  });
+
+  it('does not treat a macro head inside a block comment as a body opener', () => {
+    expect(spansFor('/*\nmacro_rules! fake\n*/\nfn outer() {\n    #[cfg(unix)]\n    fn inner() {}\n}\n')).toEqual([
+      { attrLine: 4, attrLines: [4], headLines: [4], displays: ['#[cfg(unix)]'], endLine: 5 },
+    ]);
+    // The same item without the commented-out head still pairs as one span.
+    expect(spansFor('fn outer() {\n    #[cfg(unix)]\n    fn inner() {}\n}\n')).toEqual([
+      { attrLine: 1, attrLines: [1], headLines: [1], displays: ['#[cfg(unix)]'], endLine: 2 },
+    ]);
+  });
+
+  it('does not treat a macro head inside a multi-line raw string as a body opener', () => {
+    expect(
+      spansFor('fn outer() {\n    let s = r#"\nmacro_rules! fake\n"#;\n    #[cfg(unix)]\n    fn inner() {}\n}\n')
+    ).toEqual([
+      { attrLine: 4, attrLines: [4], headLines: [4], displays: ['#[cfg(unix)]'], endLine: 5 },
+    ]);
+  });
+
+  it('still excludes a real macro body after a commented-out fake head above', () => {
+    expect(
+      spansFor('/*\nmacro_rules! fake\n*/\nmacro_rules! real {\n    #[cfg(unix)]\n    fn w() {}\n}\n')
+    ).toEqual([]);
+  });
 });
 
 describe('pairCfgItems (two cfg groups on one line)', () => {

@@ -64,4 +64,33 @@ describe('rust cfg pairing performance', () => {
     // far below, and the generous budget absorbs concurrent-full-suite contention.
     expect(elapsed).toBeLessThan(10000);
   }, 60000);
+
+  it('stays linear when every cfg item shares one #[…]-prefixed line', () => {
+    const count = 12000;
+    // Each item is one line that itself starts with an attribute, so the old
+    // per-opener backward walk over the preceding lines rescanned to line 0 and
+    // degraded to ~6.5 s at this size; the forward-pass index stays flat.
+    const text = generateOneLineCfgItems(count);
+    const lines = text.split('\n');
+
+    const start = performance.now();
+    const spans = pairCfgItems(scanRust(text), lines);
+    const elapsed = performance.now() - start;
+    console.log(`pairCfgItems ${count} one-line cfgs / ${lines.length} lines: ${elapsed.toFixed(0)} ms`);
+
+    expect(spans).toHaveLength(count);
+    // Loose scale guard (not a benchmark): the quadratic version needs ~6.5 s
+    // here uncontended, the indexed scan is ~100x below; the budget only rejects
+    // a superlinear regression while absorbing full-suite contention.
+    expect(elapsed).toBeLessThan(3000);
+  }, 60000);
 });
+
+/** One cfg-gated fn per line, each line itself `#[…]`-prefixed. */
+function generateOneLineCfgItems(count: number): string {
+  const parts: string[] = [];
+  for (let i = 0; i < count; i++) {
+    parts.push(`#[cfg(feature = "f${i}")] fn f${i}(a: u32) { let r = a; }`);
+  }
+  return parts.join('\n') + '\n';
+}
