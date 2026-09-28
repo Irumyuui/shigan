@@ -2,13 +2,14 @@ import * as assert from 'assert';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as vscode from 'vscode';
-
-interface ComputedHint {
-  line: number;
-  text: string;
-  kind: string;
-  inactive: boolean;
-}
+import type { ComputedHint } from './support';
+import {
+  applyBaseline,
+  computedHints,
+  delay,
+  restoreTouched,
+  set,
+} from './support';
 
 const MAIN = 'int main(void) {\n}\n';
 const MACRO_ONLY = '#if X\n\n#else\n\n#endif\n';
@@ -16,34 +17,6 @@ const DEAD_BRACKETS = 'int g(void) {\n#if 0\n}\n#endif\nint h(void) {\n}\n';
 const DEAD_BLOCK = '#if 0\nint a;\n#endif\n';
 const FLAG_BLOCK = '#if X\nint a;\n#endif\n';
 const FILE_DEFINE = '#define X 1\n#if X\nint a;\n#elif 0\nint b;\n#endif\n';
-
-/**
- * Explicit defaults, written back instead of removed: `update(key, undefined)`
- * was not reliable here and left `shigan.enable: false` behind, which silently
- * emptied every later test.
- */
-const BASELINE: Record<string, unknown> = {
-  enable: true,
-  languages: ['c', 'cpp', 'csharp'],
-  trigger: 'always',
-  show: ['brackets', 'macros'],
-  compileFlags: [],
-  inheritCompileCommands: false,
-  'csharp.define': [],
-  'csharp.inheritProject': true,
-  'csharp.configuration': 'Debug',
-  'csharp.targetFramework': '',
-  'preprocessor.trackFileDefines': true,
-  'preprocessor.skipInactiveBrackets': true,
-  'preprocessor.skipInactiveDirectives': false,
-  'preprocessor.markInactive': true,
-  showRange: true,
-  showRangeThreshold: 0,
-  showLabel: true,
-};
-
-const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-const touched = new Set<string>();
 
 /** Every setting gets one test that proves its effect on the rendered hints. */
 suite('Shigan settings', () => {
@@ -53,7 +26,7 @@ suite('Shigan settings', () => {
     const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
     assert.ok(root, 'the test workspace folder is missing');
 
-    fixtureDir = join(root, 'fixture');
+    fixtureDir = join(root, 'fixture', 'settings');
     mkdirSync(fixtureDir, { recursive: true });
     writeFileSync(join(fixtureDir, 'flag-inherit.c'), '#if FEATURE\nint a;\n#endif\n');
     writeFileSync(
@@ -77,12 +50,7 @@ suite('Shigan settings', () => {
   });
 
   teardown(async () => {
-    const configuration = vscode.workspace.getConfiguration('shigan');
-    for (const key of touched) {
-      await configuration.update(key, BASELINE[key], vscode.ConfigurationTarget.Workspace);
-    }
-    touched.clear();
-    await delay(80);
+    await restoreTouched();
   });
 
   test('shigan.enable = false disables everything', async () => {
@@ -217,28 +185,6 @@ suite('Shigan settings', () => {
   });
 });
 
-function configuration(): vscode.WorkspaceConfiguration {
-  return vscode.workspace.getConfiguration('shigan');
-}
-
-async function applyBaseline(): Promise<void> {
-  const config = configuration();
-  for (const [key, value] of Object.entries(BASELINE)) {
-    // The extension reads the effective value, so an already-matching setting
-    // needs no write. Skipping the no-ops avoids ~13 sequential disk writes
-    // (each firing a config-change event) on every run and on every teardown.
-    if (JSON.stringify(config.get(key)) === JSON.stringify(value)) continue;
-    await config.update(key, value, vscode.ConfigurationTarget.Workspace);
-  }
-  await delay(150);
-}
-
-async function set(key: string, value: unknown): Promise<void> {
-  touched.add(key);
-  await configuration().update(key, value, vscode.ConfigurationTarget.Workspace);
-  await delay(80);
-}
-
 async function hintsFor(content: string): Promise<ComputedHint[]> {
   const document = await vscode.workspace.openTextDocument({ language: 'c', content });
   await vscode.window.showTextDocument(document);
@@ -250,16 +196,10 @@ async function hintsForFile(name: string): Promise<ComputedHint[]> {
   const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
   assert.ok(root, 'the test workspace folder is missing');
   const document = await vscode.workspace.openTextDocument(
-    vscode.Uri.file(join(root, 'fixture', name))
+    vscode.Uri.file(join(root, 'fixture', 'settings', name))
   );
   await vscode.window.showTextDocument(document);
   await delay(20);
   return computedHints();
 }
 
-async function computedHints(): Promise<ComputedHint[]> {
-  const hints = await vscode.commands.executeCommand<ComputedHint[]>(
-    'shigan.internal.computedHints'
-  );
-  return hints ?? [];
-}

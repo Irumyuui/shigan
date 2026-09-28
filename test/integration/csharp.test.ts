@@ -2,14 +2,15 @@ import * as assert from 'assert';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as vscode from 'vscode';
-
-interface ComputedHint {
-  line: number;
-  text: string;
-  kind: string;
-  inactive: boolean;
-  target?: { line: number; col: number };
-}
+import {
+  applyBaseline,
+  bracketAt,
+  computedHints,
+  macroAt,
+  openFixture,
+  restoreTouched,
+  set,
+} from './support';
 
 /**
  * Fixture bodies. Line numbers the assertions rely on are pinned down here:
@@ -17,7 +18,6 @@ interface ComputedHint {
  * probe.cs  : 10 = close of the `#if DEBUG` body, 15 = close of the `#else`
  *             body, 21 = close of the `#if LOCALONLY` body, 24 = close of the
  *             class body, 3 = the `@"a } b"` verbatim string line.
- * probe.cpp : 9 = close of the inner pair, 11 = close of `main`, 2 = raw string.
  */
 const CSHARP_PROBE = [
   '#define LOCALONLY',
@@ -44,21 +44,6 @@ const CSHARP_PROBE = [
   '        }',
   '#endif',
   '    }',
-  '}',
-].join('\n');
-
-const CPP_PROBE = [
-  '#include <string>',
-  '',
-  'std::string raw = R"( { ( )";',
-  '',
-  'int main()',
-  '{',
-  '    int a = 0;',
-  '    {',
-  '        a++;',
-  '    }',
-  '    return a;',
   '}',
 ].join('\n');
 
@@ -145,43 +130,17 @@ const TYPES_PROBE = [
   '#endregion',
 ].join('\n');
 
-/** Same explicit defaults as settings.test.ts; written back, never removed. */
-const BASELINE: Record<string, unknown> = {
-  enable: true,
-  languages: ['c', 'cpp', 'csharp'],
-  trigger: 'always',
-  show: ['brackets', 'macros'],
-  compileFlags: [],
-  inheritCompileCommands: false,
-  'csharp.define': [],
-  'csharp.inheritProject': true,
-  'csharp.configuration': 'Debug',
-  'csharp.targetFramework': '',
-  'preprocessor.trackFileDefines': true,
-  'preprocessor.skipInactiveBrackets': true,
-  'preprocessor.skipInactiveDirectives': false,
-  'preprocessor.markInactive': true,
-  showRange: true,
-  showRangeThreshold: 0,
-  showLabel: true,
-};
+suite('Shigan C#', () => {
+  let fixtureDir = '';
 
-const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-const touched = new Set<string>();
-let fixtureDir = '';
-
-suite('Shigan language routing', () => {
   suiteSetup(async () => {
     const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
     assert.ok(root, 'the test workspace folder is missing');
 
-    // A dedicated subdirectory keeps these fixtures from colliding with the
-    // settings suite's `fixture/` directory (which it wipes recursively).
-    fixtureDir = join(root, 'fixture', 'lang');
+    fixtureDir = join(root, 'fixture', 'csharp');
     mkdirSync(fixtureDir, { recursive: true });
     writeFileSync(join(fixtureDir, 'LangProbe.csproj'), CSPROJ);
     writeFileSync(join(fixtureDir, 'probe.cs'), CSHARP_PROBE);
-    writeFileSync(join(fixtureDir, 'probe.cpp'), CPP_PROBE);
     writeFileSync(join(fixtureDir, 'probe-settings.cs'), SETTINGS_PROBE);
     writeFileSync(join(fixtureDir, 'probe-types.cs'), TYPES_PROBE);
 
@@ -198,12 +157,7 @@ suite('Shigan language routing', () => {
   });
 
   teardown(async () => {
-    const configuration = vscode.workspace.getConfiguration('shigan');
-    for (const key of touched) {
-      await configuration.update(key, BASELINE[key], vscode.ConfigurationTarget.Workspace);
-    }
-    touched.clear();
-    await delay(80);
+    await restoreTouched();
   });
 
   test('C# project DefineConstants drive #if DEBUG', async () => {
@@ -211,7 +165,7 @@ suite('Shigan language routing', () => {
     // `inactive`) instead of being dropped from the matching.
     await set('preprocessor.skipInactiveBrackets', false);
 
-    const document = await openFixture('probe.cs', 'csharp');
+    const document = await openFixture(fixtureDir, 'probe.cs', 'csharp');
     assert.strictEqual(document.languageId, 'csharp');
 
     const withProject = await computedHints();
@@ -235,7 +189,7 @@ suite('Shigan language routing', () => {
   });
 
   test('a value-less #define makes #if LOCALONLY live', async () => {
-    await openFixture('probe.cs', 'csharp');
+    await openFixture(fixtureDir, 'probe.cs', 'csharp');
     const hints = await computedHints();
     const local = bracketAt(hints, 21);
     assert.ok(local, `the #if LOCALONLY body should be hinted: ${JSON.stringify(hints)}`);
@@ -243,7 +197,7 @@ suite('Shigan language routing', () => {
   });
 
   test('C# verbatim strings are opaque', async () => {
-    await openFixture('probe.cs', 'csharp');
+    await openFixture(fixtureDir, 'probe.cs', 'csharp');
     const hints = await computedHints();
 
     assert.strictEqual(
@@ -256,31 +210,11 @@ suite('Shigan language routing', () => {
     assert.strictEqual(realPair.target?.line, 2, 'the class pair should open on line 3');
   });
 
-  test('C++ raw strings are opaque', async () => {
-    const document = await openFixture('probe.cpp', 'cpp');
-    assert.strictEqual(document.languageId, 'cpp');
-
-    const hints = await computedHints();
-    const closes = hints
-      .filter((hint) => hint.kind === 'bracket')
-      .map((hint) => hint.line)
-      .sort((a, b) => a - b);
-    assert.deepStrictEqual(
-      closes,
-      [9, 11],
-      `only the real pairs should be matched: ${JSON.stringify(hints)}`
-    );
-
-    const mainPair = bracketAt(hints, 11);
-    assert.ok(mainPair, 'the real pair after the raw string should be hinted');
-    assert.strictEqual(mainPair.target?.line, 5, 'the pair should open on the `{` after `int main()`');
-  });
-
   test('shigan.csharp.define selects #if symbols', async () => {
     // Match inactive branches too, so the flag is observable rather than the
     // hint being dropped (`skipInactiveBrackets` defaults to true).
     await set('preprocessor.skipInactiveBrackets', false);
-    await openFixture('probe-settings.cs', 'csharp');
+    await openFixture(fixtureDir, 'probe-settings.cs', 'csharp');
 
     const before = bracketAt(await computedHints(), 6);
     assert.ok(before, 'the #if VIA_SETTING body should be hinted');
@@ -294,7 +228,7 @@ suite('Shigan language routing', () => {
 
   test('shigan.compileFlags select #if symbols for C#', async () => {
     await set('preprocessor.skipInactiveBrackets', false);
-    await openFixture('probe-settings.cs', 'csharp');
+    await openFixture(fixtureDir, 'probe-settings.cs', 'csharp');
 
     const before = bracketAt(await computedHints(), 17);
     assert.ok(before, 'the #if VIACOMPILER body should be hinted');
@@ -308,7 +242,7 @@ suite('Shigan language routing', () => {
 
   test('shigan.csharp.targetFramework drives implicit framework symbols', async () => {
     await set('preprocessor.skipInactiveBrackets', false);
-    await openFixture('probe-settings.cs', 'csharp');
+    await openFixture(fixtureDir, 'probe-settings.cs', 'csharp');
 
     const inherited = bracketAt(await computedHints(), 39);
     assert.ok(inherited, 'the #if NET8_0_OR_GREATER body should be hinted');
@@ -322,7 +256,7 @@ suite('Shigan language routing', () => {
 
   test('shigan.csharp.configuration selects the project PropertyGroup', async () => {
     await set('preprocessor.skipInactiveBrackets', false);
-    await openFixture('probe-settings.cs', 'csharp');
+    await openFixture(fixtureDir, 'probe-settings.cs', 'csharp');
 
     const debug = bracketAt(await computedHints(), 28);
     assert.ok(debug, 'the #if RELEASE_ONLY body should be hinted');
@@ -335,7 +269,7 @@ suite('Shigan language routing', () => {
   });
 
   test('#region pairs with #endregion', async () => {
-    await openFixture('probe-types.cs', 'csharp');
+    await openFixture(fixtureDir, 'probe-types.cs', 'csharp');
     const hints = await computedHints();
 
     const endregion = macroAt(hints, 6);
@@ -348,7 +282,7 @@ suite('Shigan language routing', () => {
   });
 
   test('a wrapped declaration is labelled by its class line', async () => {
-    await openFixture('probe-types.cs', 'csharp');
+    await openFixture(fixtureDir, 'probe-types.cs', 'csharp');
     const hints = await computedHints();
 
     const classPair = bracketAt(hints, 5);
@@ -364,51 +298,3 @@ suite('Shigan language routing', () => {
     assert.strictEqual(classPair.target?.line, 4, 'the pair should open on the lone `{`');
   });
 });
-
-function configuration(): vscode.WorkspaceConfiguration {
-  return vscode.workspace.getConfiguration('shigan');
-}
-
-async function applyBaseline(): Promise<void> {
-  const config = configuration();
-  for (const [key, value] of Object.entries(BASELINE)) {
-    if (JSON.stringify(config.get(key)) === JSON.stringify(value)) continue;
-    await config.update(key, value, vscode.ConfigurationTarget.Workspace);
-  }
-  await delay(150);
-}
-
-async function set(key: string, value: unknown): Promise<void> {
-  touched.add(key);
-  await configuration().update(key, value, vscode.ConfigurationTarget.Workspace);
-  await delay(80);
-}
-
-async function openFixture(name: string, languageId: string): Promise<vscode.TextDocument> {
-  const document = await vscode.workspace.openTextDocument(vscode.Uri.file(join(fixtureDir, name)));
-  // The test host runs with `--disable-extensions`, so the built-in language
-  // modes may not be registered. Setting the language explicitly keeps the
-  // routing deterministic while still going through the real service path.
-  if (document.languageId !== languageId) {
-    await vscode.languages.setTextDocumentLanguage(document, languageId);
-  }
-  await vscode.window.showTextDocument(document);
-  await delay(60);
-  assert.strictEqual(document.languageId, languageId, 'the fixture should use the expected language');
-  return document;
-}
-
-function bracketAt(hints: ComputedHint[], line: number): ComputedHint | undefined {
-  return hints.find((hint) => hint.kind === 'bracket' && hint.line === line);
-}
-
-function macroAt(hints: ComputedHint[], line: number): ComputedHint | undefined {
-  return hints.find((hint) => hint.kind === 'macro' && hint.line === line);
-}
-
-async function computedHints(): Promise<ComputedHint[]> {
-  const hints = await vscode.commands.executeCommand<ComputedHint[]>(
-    'shigan.internal.computedHints'
-  );
-  return hints ?? [];
-}
