@@ -1,6 +1,6 @@
 # AGENTS.md
 
-VSCode extension for C: clickable bracket and `#if/#else/#endif` pairing hints.
+VSCode extension for C, C++ and C#: clickable bracket and `#if/#else/#endif` pairing hints.
 Hints are **inlay hints** at the end of a line; every segment is clickable and jumps to its target.
 
 The extension is **Shigan** (`shigan.*` settings, `shigan.*` command ids), and the repo folder matches. Only the
@@ -21,9 +21,10 @@ bunx vitest run test/unit/hints.test.ts        # one unit file
 bunx vitest run test/unit/hints.test.ts -t "single-line"   # one test
 ```
 
-- **Fastest way to see behaviour**: `bun run inspect <file.c> [always|cursor]` prints every hint with its text,
-  `(inactive)` marker and per-segment jump targets. It honours `<file>.macros.json` seeds like the fixture harness.
-- Manual check: F5 (`.vscode/launch.json`) + `test/manual/sample.c` + `CHECKLIST.md`.
+- **Fastest way to see behaviour**: `bun run inspect <file> [always|cursor]` prints every hint with its text,
+  `(inactive)` marker and per-segment jump targets. It picks the language from the file extension (`.c`/`.cpp`/`.cs`)
+  and honours `<file>.macros.json` seeds like the fixture harness.
+- Manual check: F5 (`.vscode/launch.json`) + `test/manual/sample.{c,cpp,cs}` + `CHECKLIST.md`.
 - CI: `.github/workflows/ci.yml` runs `just typecheck test-unit` and `xvfb-run --auto-servernum just test-integration` on ubuntu-latest for every branch push/PR, then `just package` and uploads the VSIX artifact. CI installs pinned just 1.58.0 in BOTH jobs; bump `JUST_VERSION` and `JUST_SHA256` together when upgrading, and keep the two install steps identical. Tag pushes are excluded (`branches: ['**'] filter`) - releasing is handled by `.github/workflows/release.yml` (see Releases).
 
 ## Releases
@@ -61,9 +62,18 @@ git tag -d v0.0.1
 - `src/core/**` is deliberately **`vscode`-free** (lexer, bracket matcher, preprocessor pairing, `#if` evaluator,
   settings mapping) so vitest can run it. Never import `vscode` there; the VSCode side lives in `src/render/**`,
   `src/config.ts`, `src/extension.ts`.
-- `src/service.ts` owns macros (`compileFlags` + optional `compile_commands.json`), conditional evaluation and the
-  caches. The inlay-hint provider, hover provider and diagnostic command all go through `computeDocumentHints`;
-  settings changes must call `invalidate()`.
+- `src/core/language.ts` is the language seam: `syntaxFor(languageId)` returns a `LanguageSyntax` profile
+  (`c`, `cpp`, `csharp`) that `scan` and `evaluateConditionals` accept as an optional argument. Per-language lexical
+  rules live in the profile flags: C++ raw strings (`rawStrings`), C# verbatim/interpolated/raw literals
+  (`csharpLiterals`). C is the default and the fallback, so an absent profile scans exactly like C.
+- C# conditional symbols come from `src/core/csproj.ts` (extracts `DefineConstants` and `TargetFramework`, derives
+  the implicit target-framework symbols) via `src/csproj-source.ts` (nearest `.csproj` + `Directory.Build.props`,
+  cached like `flags-source.ts`). A value-less `#define NAME` counts as `NAME=1`, and `true`/`false` are seeded as
+  `#if` operands.
+- `src/service.ts` owns macros, conditional evaluation and the caches. Macro sources are per language: C/C++ use
+  `compileFlags` + optional `compile_commands.json`; C# uses project symbols + `shigan.csharp.define` + `compileFlags`
+  and never `compile_commands.json`. The inlay-hint provider, hover provider and diagnostic command all go through
+  `computeDocumentHints`; settings changes must call `invalidate()` (which also clears the csproj cache).
 - Rendering is inlay hints on purpose: only `InlayHintLabelPart.command` supports click-to-jump, so colours come from
   the theme (`editorInlayHint.foreground`) and there is no colour setting.
 - A hint is a `HintPart[]` (`text`, `target`, `title`); `hint.text` must stay the concatenation of the part texts
@@ -82,6 +92,9 @@ git tag -d v0.0.1
   literals (a computed message cannot be extracted).
 - **A new setting touches 6+ files**: `package.json`, the three `package.nls*.json`, `src/core/settings.ts`,
   `test/unit/config.test.ts`, `test/integration/settings.test.ts` (plus README).
+- **Language support is on by default**: `shigan.languages` defaults to `["c","cpp","csharp"]` and `package.json`
+  lists `onLanguage:` for each. Adding a language touches `src/core/language.ts` (the profile), both of those places,
+  `src/core/settings.ts` and `test/unit/config.test.ts`.
 - **Integration tests restore settings by writing defaults**, never `update(key, undefined)` — removal proved
   unreliable and left `shigan.enable: false` behind, silently emptying every later test. Copy the `BASELINE` pattern
   in `test/integration/settings.test.ts`.
@@ -95,15 +108,18 @@ git tag -d v0.0.1
 
 ## Tests
 
-- `test/unit/**` — vitest, pure logic. `test/unit/support.ts` exposes `predicates(text, seed)` mirroring the
-  extension's evaluation; use it for anything involving `#if`.
+- `test/unit/**` — vitest, pure logic. `test/unit/support.ts` exposes `predicates(text, seed, languageId)` mirroring
+  the extension's evaluation; use it for anything involving `#if`.
 - `test/unit/performance.test.ts` is a scale guard, not a benchmark: synthetic 20k–100k-line documents with
   deliberately generous wall-clock budgets. Keep the budgets loose (they catch superlinear regressions, not
   micro-timing) — tightening them makes the suite flaky.
-- `test/fixtures/{brackets,macros}/*.c` + `.expected.json` golden files; a macro fixture may add `<case>.macros.json`
-  to seed macros. Verify expectations by hand or with `bun run inspect` — never blind-snapshot.
+- `test/fixtures/{brackets,macros}/*.{c,cpp,cs}` + `.expected.json` golden files; the harness picks the profile from
+  the extension, and a macro fixture may add `<case>.macros.json` to seed macros. Verify expectations by hand or with
+  `bun run inspect` — never blind-snapshot.
 - `test/integration/**` runs in a real VSCode; `.vscode-test.mjs` globs `out/integration/**/*.test.js`, built from
   `test/integration/*.test.ts`.
+- `test/integration/languages.test.ts` covers per-language routing and C# project symbols. The test host runs with
+  `--disable-extensions`, so it calls `vscode.languages.setTextDocumentLanguage` to force the language id.
 - `vscode.executeInlayHintProvider` works in the test host: `extension.test.ts` uses it to assert the real provider
   output (label parts and tooltips), which the diagnostic command alone cannot cover.
 - `test/manual/**` is only for F5 self-testing.
