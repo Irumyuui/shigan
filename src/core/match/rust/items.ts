@@ -37,6 +37,14 @@ const OPENERS = new Set(['(', '[', '{']);
 const MACRO_HEAD_TAIL =
   /(?:^|[^\w])(?:pub(?:\s*\([^)]*\))?\s+)?(?:macro_rules\s*!|macro(?![A-Za-z0-9_]))\s+[A-Za-z_][A-Za-z0-9_]*\s*$/;
 
+/**
+ * A macro head whose name sits on a LATER line: `macro_rules!` / `macro` alone
+ * at the end of a line (optionally behind `pub`). The following name line
+ * continues the head, and the delimiter after that opens the body.
+ */
+const MACRO_KEYWORD_ONLY =
+  /^(?:pub(?:\s*\([^)]*\))?\s+)?(?:macro_rules\s*!|macro(?![A-Za-z0-9_]))\s*$/;
+
 /** A line that starts an attribute or a doc comment (used for `headLines`). */
 const HEAD_LINE_START = /^(?:#!?\[|\/\/\/|\/\/!|\/\*!|\/\*\*)/;
 
@@ -69,7 +77,11 @@ export function pairCfgItems(scanned: ScanResult, lines: readonly string[]): Cfg
 
   const brackets = scanned.brackets;
   const pairs = matchBrackets(brackets);
-  const index = buildBracketIndex(brackets, lines, pairs.byOpenOffset);
+  const code = maskComments(lines);
+  // `codeOnly` additionally blanks `#[…]` spans, so a leading-block continuation
+  // can be recognised without counting raw brackets that belong to a prior item.
+  const codeOnly = maskAttributeSpans(code);
+  const index = buildBracketIndex(brackets, code, pairs.byOpenOffset);
 
   const cfgs = all.filter(
     (attr) =>
@@ -90,7 +102,7 @@ export function pairCfgItems(scanned: ScanResult, lines: readonly string[]): Cfg
 
   for (const attr of cfgs) {
     if (consumed.has(attrKey(attr))) continue;
-    const span = pairOne(attr, cfgByPos, consumed, brackets, index, pairs.byOpenOffset, lines);
+    const span = pairOne(attr, cfgByPos, consumed, brackets, index, pairs.byOpenOffset, lines, codeOnly);
     if (span) spans.push(span);
   }
 
@@ -105,7 +117,8 @@ function pairOne(
   brackets: readonly BracketToken[],
   index: BracketIndex,
   byOpenOffset: Map<number, { open: BracketToken; close: BracketToken }>,
-  lines: readonly string[]
+  lines: readonly string[],
+  codeOnly: readonly string[]
 ): CfgItemSpan | undefined {
   const limit = Math.min(first.line + MAX_LOOKAHEAD, lines.length - 1);
   const merged: CfgAttributeToken[] = [];
@@ -182,7 +195,7 @@ function pairOne(
 
     const attrLines = merged.map((attribute) => attribute.line);
     const lastCfg = attrLines[attrLines.length - 1];
-    const headStart = leadingHeadStart(lines, first.line);
+    const headStart = leadingHeadStart(lines, codeOnly, first.line);
     const headLines: number[] = [];
     for (let head = headStart; head <= lastCfg; head++) headLines.push(head);
 
@@ -520,11 +533,31 @@ function maskComments(lines: readonly string[]): string[] {
   const masked: string[] = [];
   let block = 0; // open nested block-comment depth
   let raw = -1; // open raw-string hash count, -1 when none
+  let string = false; // an open normal `"…"` string (spans lines like the lexer's)
 
   for (const text of lines) {
     const chars = text.split('');
     let i = 0;
     while (i < text.length) {
+      if (string) {
+        const ch = text[i];
+        if (ch === '\\') {
+          // A backslash escapes the next char, including a newline, so the
+          // string continues onto the next line (mirrors the lexer's skipString).
+          chars[i] = ' ';
+          if (i + 1 < text.length) {
+            chars[i + 1] = ' ';
+            i += 2;
+          } else {
+            i++;
+          }
+          continue;
+        }
+        chars[i] = ' ';
+        i++;
+        if (ch === '"') string = false;
+        continue;
+      }
       if (block > 0) {
         if (text[i] === '/' && text[i + 1] === '*') {
           chars[i] = ' ';
@@ -585,9 +618,9 @@ function maskComments(lines: readonly string[]): string[] {
       }
 
       if (ch === '"') {
-        const end = skipStringInLine(text, i);
-        for (let k = i; k < end; k++) chars[k] = ' ';
-        i = end;
+        chars[i] = ' ';
+        string = true; // opening quote; masked until the closing one (cross-line)
+        i++;
         continue;
       }
       if (ch === "'") {
@@ -603,21 +636,90 @@ function maskComments(lines: readonly string[]): string[] {
 }
 
 /**
+ * Blanks `#[…]` / `#![…]` attribute spans in an already comment/string-masked
+ * copy, preserving every line's length. The result holds only real code, so
+ * "this line is nothing but attribute/comment content" becomes a whitespace
+ * check. Counting brackets in the masked copy (rather than a raw balance)
+ * keeps an attribute closer on a previous item's line (`… b))] fn f() {}`)
+ * from being read as an open continuation.
+ */
+function maskAttributeSpans(masked: readonly string[]): string[] {
+  const out: string[] = [];
+  let depth = 0; // bracket depth inside an attribute
+
+  for (const text of masked) {
+    const chars = text.split('');
+    let i = 0;
+    while (i < text.length) {
+      if (depth > 0) {
+        const ch = text[i];
+        if (ch === '[') depth++;
+        else if (ch === ']') depth--;
+        chars[i] = ' ';
+        i++;
+        continue;
+      }
+      if (text[i] === '#') {
+        const bang = text[i + 1] === '!';
+        const bracket = bang ? i + 2 : i + 1;
+        if (text[bracket] === '[') {
+          for (let k = i; k <= bracket; k++) chars[k] = ' ';
+          depth = 1;
+          i = bracket + 1;
+          continue;
+        }
+      }
+      i++;
+    }
+    out.push(chars.join(''));
+  }
+
+  return out;
+}
+
+/**
  * Per line, whether the nearest preceding non-transparent line carries a macro
  * head. One forward pass: a blank/comment-only/attribute-only line is
  * transparent and preserves the carried answer; a macro-head line sets it; any
  * other code line clears it. This replaces the former per-opener backward walk
  * that rescanned to line 0 for one-line `#[…]` items.
+ *
+ * A head may be split across lines (`macro_rules!` then the name, then the
+ * body delimiter); {@link MACRO_KEYWORD_ONLY} starts that state and a
+ * name-only line carries it to the delimiter's line.
  */
 function nearestMacroHeadBefore(code: readonly string[]): boolean[] {
   const result = new Array<boolean>(code.length).fill(false);
   let pending = false;
+  let awaitingName = false;
   for (let line = 0; line < code.length; line++) {
     result[line] = pending;
     const trimmed = (code[line] ?? '').trim();
     if (trimmed === '') continue;
-    if (MACRO_HEAD_TAIL.test(trimmed)) pending = true;
-    else if (!isAttributeOnly(trimmed)) pending = false;
+    if (isAttributeOnly(trimmed)) continue;
+    if (MACRO_HEAD_TAIL.test(trimmed)) {
+      pending = true;
+      awaitingName = false;
+      continue;
+    }
+    if (MACRO_KEYWORD_ONLY.test(trimmed)) {
+      pending = true;
+      awaitingName = true;
+      continue;
+    }
+    if (awaitingName) {
+      const name = /^[A-Za-z_][A-Za-z0-9_]*/.exec(trimmed);
+      if (name) {
+        const rest = trimmed.slice(name[0].length).trim();
+        // A bare name keeps the head alive for a delimiter on a later line; a
+        // delimiter on this line is the opener, so the head ends here.
+        pending = rest === '';
+        awaitingName = false;
+        continue;
+      }
+    }
+    pending = false;
+    awaitingName = false;
   }
   return result;
 }
@@ -739,18 +841,24 @@ function isIdentChar(ch: string): boolean {
  * Start line of the item's leading attribute/doc-comment block, walking up from
  * `firstLine`. Continuation lines of a multi-line attribute or block doc comment
  * are absorbed too, but only when the walk actually reaches an attribute/doc
- * start, so unrelated code above is never pulled in.
+ * start, so unrelated code above is never pulled in. Blank lines between
+ * contiguous attribute/doc lines are traversed (Rust attaches them across blank
+ * whitespace) but only when a real head line is still reached above.
  */
-function leadingHeadStart(lines: readonly string[], firstLine: number): number {
+function leadingHeadStart(
+  lines: readonly string[],
+  codeOnly: readonly string[],
+  firstLine: number
+): number {
   let start = firstLine;
   for (let line = firstLine - 1; line >= 0; line--) {
     const trimmed = (lines[line] ?? '').trim();
-    if (trimmed === '') break;
+    if (trimmed === '') continue;
     if (isHeadAttributeLine(trimmed)) {
       start = line;
       continue;
     }
-    if (isHeadContinuation(lines, line, firstLine)) {
+    if (isHeadContinuation(codeOnly, line)) {
       start = line;
       continue;
     }
@@ -778,35 +886,17 @@ function isHeadAttributeLine(trimmed: string): boolean {
 }
 
 /**
- * True when `line` is inside a multi-line attribute or block doc comment that is
- * still open in the region `[line, firstLine)`: more attribute `]` than `[`, or
- * more block-comment `*/` than `/*`. Walking the region is cheap (leading blocks
- * are short).
+ * True when `line` is a continuation line of the leading block: after masking
+ * comments, strings AND attribute spans, nothing but whitespace remains, so the
+ * line is entirely attribute/comment content rather than code. Running the
+ * check on the masked copy is what keeps an unbalanced bracket or a
+ * block-comment delimiter inside
+ * a comment or string (or a prior item's attribute closer followed by code) from
+ * pulling that line into the next item's `headLines`. Blank lines also satisfy
+ * this, but {@link leadingHeadStart} handles them before reaching here.
  */
-function isHeadContinuation(
-  lines: readonly string[],
-  line: number,
-  firstLine: number
-): boolean {
-  let attr = 0;
-  let block = 0;
-  for (let l = firstLine - 1; l >= line; l--) {
-    const text = lines[l] ?? '';
-    attr += countOccurrences(text, ']') - countOccurrences(text, '[');
-    block += countOccurrences(text, '*/') - countOccurrences(text, '/*');
-  }
-  return attr > 0 || block > 0;
-}
-
-function countOccurrences(text: string, needle: string): number {
-  let count = 0;
-  let from = 0;
-  for (;;) {
-    const at = text.indexOf(needle, from);
-    if (at < 0) return count;
-    count++;
-    from = at + needle.length;
-  }
+function isHeadContinuation(codeOnly: readonly string[], line: number): boolean {
+  return (codeOnly[line] ?? '').trim() === '';
 }
 
 /**
@@ -826,7 +916,7 @@ interface BracketIndex {
 
 function buildBracketIndex(
   brackets: readonly BracketToken[],
-  lines: readonly string[],
+  code: readonly string[],
   byOpenOffset: Map<number, { open: BracketToken; close: BracketToken }>
 ): BracketIndex {
   const count = brackets.length;
@@ -837,7 +927,6 @@ function buildBracketIndex(
   // A macro body's delimiter may be `(`, `[` or `{`, and may not share a line
   // with the `macro_rules!`/`macro` head; detect the opener structurally via the
   // comment-masked forward-pass index (O(1) per opener).
-  const code = maskComments(lines);
   const nearestHead = nearestMacroHeadBefore(code);
   const macroOpenerOffsets = new Set<number>();
   for (let i = 0; i < count; i++) {

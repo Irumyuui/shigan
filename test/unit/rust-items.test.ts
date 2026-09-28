@@ -97,6 +97,50 @@ describe('pairCfgItems (head lines)', () => {
       { attrLine: 2, attrLines: [2], headLines: [1, 2], displays: ['#[cfg(unix)]'], endLine: 3 },
     ]);
   });
+
+  it('does not absorb a prior item line that closes a multi-line attribute', () => {
+    expect(spansFor('#[cfg(all(a,\n    b))] fn f() {}\n#[cfg(unix)]\nfn g() {}\n')).toEqual([
+      { attrLine: 0, attrLines: [0], headLines: [0], displays: ['#[cfg(all(a, b))]'], endLine: 1 },
+      { attrLine: 2, attrLines: [2], headLines: [2], displays: ['#[cfg(unix)]'], endLine: 3 },
+    ]);
+  });
+
+  it('does not absorb a prior item line whose only closer sits in a comment', () => {
+    expect(spansFor('#[cfg(x)] fn f() {} // ]\n#[cfg(unix)]\nfn g() {}\n')).toEqual([
+      { attrLine: 0, attrLines: [0], headLines: [0], displays: ['#[cfg(x)]'], endLine: 0 },
+      { attrLine: 1, attrLines: [1], headLines: [1], displays: ['#[cfg(unix)]'], endLine: 2 },
+    ]);
+  });
+
+  it('absorbs a doc comment separated from its cfg by a blank line', () => {
+    expect(spansFor('/// docs\n\n#[cfg(feature="x")]\nfn f() {}\n')).toEqual([
+      {
+        attrLine: 2,
+        attrLines: [2],
+        headLines: [0, 1, 2],
+        displays: ['#[cfg(feature="x")]'],
+        endLine: 3,
+      },
+    ]);
+  });
+
+  it('does not walk a blank line past a preceding item', () => {
+    expect(spansFor('fn prev() {}\n\n/// docs\n\n#[cfg(feature="x")]\nfn f() {}\n')).toEqual([
+      {
+        attrLine: 4,
+        attrLines: [4],
+        headLines: [2, 3, 4],
+        displays: ['#[cfg(feature="x")]'],
+        endLine: 5,
+      },
+    ]);
+  });
+
+  it('does not extend headLines over a blank line with no head above', () => {
+    expect(spansFor('use a::b;\n\n#[cfg(x)]\nfn f() {}\n')).toEqual([
+      { attrLine: 2, attrLines: [2], headLines: [2], displays: ['#[cfg(x)]'], endLine: 3 },
+    ]);
+  });
 });
 
 describe('pairCfgItems (no span)', () => {
@@ -240,6 +284,45 @@ describe('pairCfgItems (macro bodies whose delimiter is not on the header line)'
     ).toEqual([
       { attrLine: 4, attrLines: [4], headLines: [4], displays: ['#[cfg(unix)]'], endLine: 5 },
     ]);
+  });
+
+  it('does not treat a macro head inside a backslash-continued string as a body opener', () => {
+    // The lexer follows `\` + newline into the next line, so `macro_rules! fake`
+    // here is string content, not a head; the string closes on line 2.
+    expect(
+      spansFor(
+        'fn outer() {\n    let s = "abc\\\nmacro_rules! fake";\n    #[cfg(unix)]\n    fn inner() {\n        #[cfg(unix)]\n        fn w() {}\n    }\n}\n'
+      )
+    ).toEqual([
+      { attrLine: 3, attrLines: [3], headLines: [3], displays: ['#[cfg(unix)]'], endLine: 7 },
+      { attrLine: 5, attrLines: [5], headLines: [5], displays: ['#[cfg(unix)]'], endLine: 6 },
+    ]);
+  });
+
+  it('still pairs a cfg after an ordinary one-line string', () => {
+    expect(spansFor('fn outer() {\n    let s = "abc";\n    #[cfg(unix)]\n    fn inner() {}\n}\n')).toEqual([
+      { attrLine: 2, attrLines: [2], headLines: [2], displays: ['#[cfg(unix)]'], endLine: 3 },
+    ]);
+  });
+
+  it('ignores a cfg inside a macro_rules body whose head is split across lines', () => {
+    expect(spansFor('macro_rules!\nm\n{\n    #[cfg(unix)]\n    fn w() {}\n}\n')).toEqual([]);
+  });
+
+  it('ignores a cfg inside a split head whose name shares the delimiter line', () => {
+    expect(spansFor('macro_rules!\nm {\n    #[cfg(unix)]\n    fn w() {}\n}\n')).toEqual([]);
+  });
+
+  it('ignores a cfg inside a split-head paren body', () => {
+    expect(spansFor('macro_rules!\nm\n(\n    #[cfg(unix)]\n    fn w() {}\n);\n')).toEqual([]);
+  });
+
+  it('ignores a cfg inside a split macro 2.0 body', () => {
+    expect(spansFor('macro\nm\n{\n    #[cfg(unix)]\n    fn w() {}\n}\n')).toEqual([]);
+  });
+
+  it('keeps the same-line macro body control span-less', () => {
+    expect(spansFor('macro_rules! m {\n    #[cfg(unix)]\n    fn w() {}\n}\n')).toEqual([]);
   });
 
   it('still excludes a real macro body after a commented-out fake head above', () => {

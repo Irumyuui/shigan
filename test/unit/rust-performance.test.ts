@@ -84,7 +84,39 @@ describe('rust cfg pairing performance', () => {
     // a superlinear regression while absorbing full-suite contention.
     expect(elapsed).toBeLessThan(3000);
   }, 60000);
+
+  it('stays linear when macro heads are split across lines', () => {
+    const count = 12000;
+    // Every macro head is `macro_rules!` / name / `{` on three lines, so the
+    // name-continuation state must be carried by the forward pass; a per-opener
+    // backward walk would degrade to O(cfgs x lines) here.
+    const text = generateSplitHeadMacros(count);
+    const lines = text.split('\n');
+
+    const start = performance.now();
+    const spans = pairCfgItems(scanRust(text), lines);
+    const elapsed = performance.now() - start;
+    console.log(`pairCfgItems ${count} split-head macros / ${lines.length} lines: ${elapsed.toFixed(0)} ms`);
+
+    // Every cfg sits inside a macro body, so nothing pairs.
+    expect(spans).toHaveLength(0);
+    expect(elapsed).toBeLessThan(5000);
+  }, 60000);
 });
+
+/** One split-head macro body per definition: `macro_rules!` / name / `{`. */
+function generateSplitHeadMacros(count: number): string {
+  const parts: string[] = [];
+  for (let i = 0; i < count; i++) {
+    parts.push('macro_rules!');
+    parts.push(`m${i}`);
+    parts.push('{');
+    parts.push('    #[cfg(unix)]');
+    parts.push('    fn w() {}');
+    parts.push('}');
+  }
+  return parts.join('\n') + '\n';
+}
 
 /** One cfg-gated fn per line, each line itself `#[…]`-prefixed. */
 function generateOneLineCfgItems(count: number): string {
