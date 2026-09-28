@@ -24,11 +24,15 @@ const FILE_DEFINE = '#define X 1\n#if X\nint a;\n#elif 0\nint b;\n#endif\n';
  */
 const BASELINE: Record<string, unknown> = {
   enable: true,
-  languages: ['c', 'cpp'],
+  languages: ['c', 'cpp', 'csharp'],
   trigger: 'always',
   show: ['brackets', 'macros'],
   compileFlags: [],
   inheritCompileCommands: false,
+  'csharp.define': [],
+  'csharp.inheritProject': true,
+  'csharp.configuration': 'Debug',
+  'csharp.targetFramework': '',
   'preprocessor.trackFileDefines': true,
   'preprocessor.skipInactiveBrackets': true,
   'preprocessor.skipInactiveDirectives': false,

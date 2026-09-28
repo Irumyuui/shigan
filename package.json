@@ -24,7 +24,8 @@
   ],
   "activationEvents": [
     "onLanguage:c",
-    "onLanguage:cpp"
+    "onLanguage:cpp",
+    "onLanguage:csharp"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -43,7 +44,8 @@
           },
           "default": [
             "c",
-            "cpp"
+            "cpp",
+            "csharp"
           ],
           "description": "%shigan.languages.description%"
         },
@@ -86,6 +88,29 @@
           "type": "boolean",
           "default": false,
           "description": "%shigan.inheritCompileCommands.description%"
+        },
+        "shigan.csharp.define": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "%shigan.csharp.define.description%"
+        },
+        "shigan.csharp.inheritProject": {
+          "type": "boolean",
+          "default": true,
+          "description": "%shigan.csharp.inheritProject.description%"
+        },
+        "shigan.csharp.configuration": {
+          "type": "string",
+          "default": "Debug",
+          "description": "%shigan.csharp.configuration.description%"
+        },
+        "shigan.csharp.targetFramework": {
+          "type": "string",
+          "default": "",
+          "description": "%shigan.csharp.targetFramework.description%"
         },
         "shigan.preprocessor.trackFileDefines": {
           "type": "boolean",

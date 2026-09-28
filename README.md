@@ -55,11 +55,15 @@ they follow `editor.inlayHints.enabled` — there is no colour/opacity setting.
 | Key | Default | Description |
 | --- | --- | --- |
 | `shigan.enable` | `true` | Master switch |
-| `shigan.languages` | `["c","cpp"]` | Active language ids |
+| `shigan.languages` | `["c","cpp","csharp"]` | Active language ids |
 | `shigan.trigger` | `"cursor"` | `cursor` / `always` / `hover` / `off`, for both kinds |
 | `shigan.show` | `["brackets","macros"]` | Which kinds to hint |
 | `shigan.compileFlags` | `[]` | Compiler-style flags, e.g. `["-DDEBUG=1","-Iinclude","-std=c11"]` |
 | `shigan.inheritCompileCommands` | `false` | Also read `-D`/`-I`/`-std` from `compile_commands.json` |
+| `shigan.csharp.define` | `[]` | Extra C# symbols for `#if`, e.g. `["TRACE","DEBUG"]` |
+| `shigan.csharp.inheritProject` | `true` | Read `DefineConstants` from the nearest `.csproj`/`Directory.Build.props` |
+| `shigan.csharp.configuration` | `"Debug"` | `$(Configuration)` used when evaluating the C# project file |
+| `shigan.csharp.targetFramework` | `""` | Target framework (e.g. `net8.0`); empty = read from the project file |
 | `shigan.preprocessor.trackFileDefines` | `true` | Evaluate `#define`/`#undef` found in the file |
 | `shigan.preprocessor.skipInactiveBrackets` | `true` | Do not match brackets in inactive branches |
 | `shigan.preprocessor.skipInactiveDirectives` | `false` | Hide directive hints that refer to an inactive branch/block |
