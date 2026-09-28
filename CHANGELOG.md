@@ -5,7 +5,11 @@ All notable changes to Shigan are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.0.3] - 2026-09-28
+
+### Fixed
+
+- README: dropped `telemetry.feedback.enabled` from the basic settings example - it is not a Shigan setting, so pasting it did nothing.
 
 ## [0.0.2] - 2026-09-26
 
