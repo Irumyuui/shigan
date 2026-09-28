@@ -24,9 +24,12 @@ export function flagsForFile(
   targetFile: string
 ): string[] | undefined {
   const target = normalizePath(targetFile);
-  const entry =
-    entries.find((e) => normalizePath(resolvePath(e.directory, e.file)) === target) ??
-    entries.find((e) => normalizePath(e.file) === target);
+  // `resolvePath` already handles both spellings the spec allows: an absolute
+  // `file`, or a `file` relative to `entry.directory`. A relative `file` whose
+  // entry has no `directory` has no base to resolve against, so it can never
+  // match an absolute target (the old fallback compared the raw `file` to the
+  // absolute target and was therefore dead).
+  const entry = entries.find((e) => normalizePath(resolvePath(e.directory, e.file)) === target);
   return entry ? extractFlags(entry) : undefined;
 }
 

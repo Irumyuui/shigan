@@ -17,6 +17,8 @@ const DEAD_BRACKETS = 'int g(void) {\n#if 0\n}\n#endif\nint h(void) {\n}\n';
 const DEAD_BLOCK = '#if 0\nint a;\n#endif\n';
 const FLAG_BLOCK = '#if X\nint a;\n#endif\n';
 const FILE_DEFINE = '#define X 1\n#if X\nint a;\n#elif 0\nint b;\n#endif\n';
+const A_ONLY_BLOCK = '#if A_ONLY\nint a;\n#endif\n';
+const B_ONLY_BLOCK = '#if B_ONLY\nint b;\n#endif\n';
 
 /** Every setting gets one test that proves its effect on the rendered hints. */
 suite('Shigan settings', () => {
@@ -29,6 +31,8 @@ suite('Shigan settings', () => {
     fixtureDir = join(root, 'fixture', 'settings');
     mkdirSync(fixtureDir, { recursive: true });
     writeFileSync(join(fixtureDir, 'flag-inherit.c'), '#if FEATURE\nint a;\n#endif\n');
+    writeFileSync(join(fixtureDir, 'flag-a.c'), A_ONLY_BLOCK);
+    writeFileSync(join(fixtureDir, 'flag-b.c'), B_ONLY_BLOCK);
     writeFileSync(
       join(fixtureDir, 'compile_commands.json'),
       JSON.stringify([
@@ -36,6 +40,16 @@ suite('Shigan settings', () => {
           directory: fixtureDir,
           file: 'flag-inherit.c',
           command: 'cc -DFEATURE -c flag-inherit.c',
+        },
+        {
+          directory: fixtureDir,
+          file: 'flag-a.c',
+          command: 'cc -DA_ONLY -c flag-a.c',
+        },
+        {
+          directory: fixtureDir,
+          file: 'flag-b.c',
+          command: 'cc -DB_ONLY -c flag-b.c',
         },
       ])
     );
@@ -181,6 +195,19 @@ suite('Shigan settings', () => {
       withFlags[0].inactive,
       false,
       'the flags from compile_commands.json should apply'
+    );
+  });
+
+  test('shigan.inheritCompileCommands keeps per-file flags apart', async () => {
+    await set('inheritCompileCommands', true);
+    // Open a then b: both live in the same directory, so a per-directory cache
+    // holding a per-file answer would let a's flags leak into b.
+    const a = await hintsForFile('flag-a.c');
+    const b = await hintsForFile('flag-b.c');
+    assert.deepStrictEqual(
+      { a: a.map((hint) => [hint.line, hint.inactive]), b: b.map((hint) => [hint.line, hint.inactive]) },
+      { a: [[2, false]], b: [[2, false]] },
+      `each file should see only its own flag: ${JSON.stringify({ a, b })}`
     );
   });
 });
