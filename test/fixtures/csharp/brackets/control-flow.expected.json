@@ -1,0 +1,12 @@
+[
+  { "line": 9, "text": " <- :8-10 foreach (var x in xs)", "kind": "bracket", "openLine": 7, "closeLine": 9 },
+  { "line": 13, "text": " <- :12-14 while (total < limit)", "kind": "bracket", "openLine": 11, "closeLine": 13 },
+  { "line": 17, "text": " <- :16-18 do", "kind": "bracket", "openLine": 15, "closeLine": 17 },
+  { "line": 24, "text": " <- :20-25 switch (total)", "kind": "bracket", "openLine": 19, "closeLine": 24 },
+  { "line": 31, "text": " <- :30-32 if (total == 5)", "kind": "bracket", "openLine": 29, "closeLine": 31 },
+  { "line": 33, "text": " <- :29-34 while (total > 0)", "kind": "bracket", "openLine": 28, "closeLine": 33 },
+  { "line": 34, "text": " <- :28-35 for (int i = 0; i < limit; ++i)", "kind": "bracket", "openLine": 27, "closeLine": 34 },
+  { "line": 42, "text": " <- :40-43 string kind = xs.Length switch", "kind": "bracket", "openLine": 39, "closeLine": 42 },
+  { "line": 44, "text": " <- :6-45 int Loop(int[] xs, int limit)", "kind": "bracket", "openLine": 5, "closeLine": 44 },
+  { "line": 45, "text": " <- :4-46 class Control", "kind": "bracket", "openLine": 3, "closeLine": 45 }
+]

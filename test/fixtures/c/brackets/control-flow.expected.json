@@ -1,0 +1,9 @@
+[
+  { "line": 9, "text": " <- :7-10 while (i < limit)", "kind": "bracket", "openLine": 6, "closeLine": 9 },
+  { "line": 13, "text": " <- :12-14 do", "kind": "bracket", "openLine": 11, "closeLine": 13 },
+  { "line": 22, "text": " <- :16-23 switch (x)", "kind": "bracket", "openLine": 15, "closeLine": 22 },
+  { "line": 30, "text": " <- :29-31 if (total == 42)", "kind": "bracket", "openLine": 28, "closeLine": 30 },
+  { "line": 32, "text": " <- :27-33 while (total < 100)", "kind": "bracket", "openLine": 26, "closeLine": 32 },
+  { "line": 33, "text": " <- :26-34 for (i = 0; i < limit; ++i)", "kind": "bracket", "openLine": 25, "closeLine": 33 },
+  { "line": 38, "text": " <- :4-39 int scan(int x, int limit)", "kind": "bracket", "openLine": 3, "closeLine": 38 }
+]

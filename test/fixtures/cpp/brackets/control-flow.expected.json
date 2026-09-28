@@ -1,0 +1,10 @@
+[
+  { "line": 7, "text": " <- :6-8 for (auto x : xs)", "kind": "bracket", "openLine": 5, "closeLine": 7 },
+  { "line": 12, "text": " <- :11-13 while (i < limit)", "kind": "bracket", "openLine": 10, "closeLine": 12 },
+  { "line": 21, "text": " <- :15-22 switch (total)", "kind": "bracket", "openLine": 14, "closeLine": 21 },
+  { "line": 28, "text": " <- :27-29 if (total == 7)", "kind": "bracket", "openLine": 26, "closeLine": 28 },
+  { "line": 30, "text": " <- :26-31 while (total > 0)", "kind": "bracket", "openLine": 25, "closeLine": 30 },
+  { "line": 31, "text": " <- :25-32 for (int j = 0; j < limit; ++j)", "kind": "bracket", "openLine": 24, "closeLine": 31 },
+  { "line": 37, "text": " <- :36-38 auto clamp = [](int v)", "kind": "bracket", "openLine": 35, "closeLine": 37 },
+  { "line": 39, "text": " <- :4-40 int sum(const std::vector<int>& xs, int limit)", "kind": "bracket", "openLine": 3, "closeLine": 39 }
+]
