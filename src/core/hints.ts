@@ -293,16 +293,51 @@ function segment(
   return bits.join(' ');
 }
 
+/** A line that continues the previous one (base list, `where`, chain). */
+const CONTINUATION_START = /^(?:[:,.](?=\s|$)|->|where\b)/;
+/** A previous line that leaves the next one a continuation. */
+const CONTINUATION_END = /[,:(<&|.]$|->$/;
+/** A type declaration, optionally preceded by modifiers. */
+const TYPE_DECLARATION = /^(?:[\w@]+\s+)*(class|struct|interface|enum|namespace|record|union)\b/;
+/** How far the continuation walk may climb before giving up. */
+const MAX_CONTINUATION_STEPS = 16;
+
 /**
  * Label shown for an opening bracket: the trimmed text before the bracket on
- * its own line. When the bracket is alone on its line (a brace on its own
- * line), fall back to the previous line's trimmed text.
+ * its own line. When the brace is alone on its line, walk back over a wrapped
+ * declaration (base list / `where` clause) and return the type declaration
+ * when one is found; otherwise fall back to the previous line's trimmed text.
  */
 export function labelFor(lines: string[], open: BracketToken): string {
   const lineText = lines[open.line] ?? '';
   const before = lineText.slice(0, open.col).trim();
   if (before) return before;
-  return open.line > 0 ? (lines[open.line - 1] ?? '').trim() : '';
+  if (open.line === 0) return '';
+
+  const fallback = (lines[open.line - 1] ?? '').trim();
+  const candidate = continuationStart(lines, open.line - 1);
+  return TYPE_DECLARATION.test(candidate) ? candidate : fallback;
+}
+
+/**
+ * Walks upward from `start` over continuation lines and returns the first
+ * non-continuation line's trimmed text (bounded by `MAX_CONTINUATION_STEPS`
+ * and line 0).
+ */
+function continuationStart(lines: string[], start: number): string {
+  let index = start;
+  let steps = 0;
+
+  while (index > 0 && steps < MAX_CONTINUATION_STEPS) {
+    const cur = (lines[index] ?? '').trim();
+    const prev = (lines[index - 1] ?? '').trim();
+    const continues = CONTINUATION_START.test(cur) || CONTINUATION_END.test(prev);
+    if (!continues) break;
+    index--;
+    steps++;
+  }
+
+  return (lines[index] ?? '').trim();
 }
 
 function selectCursorPairs(result: BracketMatchResult, cursorOffset: number): BracketPair[] {

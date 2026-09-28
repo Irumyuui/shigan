@@ -1,0 +1,7 @@
+[
+  { "line": 5, "text": " <- :4-6 class Foo : public Base", "kind": "bracket", "openLine": 3, "closeLine": 5 },
+  { "line": 10, "text": " <- :9-11 struct Point", "kind": "bracket", "openLine": 8, "closeLine": 10 },
+  { "line": 16, "text": " <- :14-17 enum class Color", "kind": "bracket", "openLine": 13, "closeLine": 16 },
+  { "line": 22, "text": " <- :22-23 class Wrapped", "kind": "bracket", "openLine": 21, "closeLine": 22 },
+  { "line": 23, "text": " <- :2-24 namespace demo", "kind": "bracket", "openLine": 1, "closeLine": 23 }
+]

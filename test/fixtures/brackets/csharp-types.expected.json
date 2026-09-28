@@ -1,0 +1,10 @@
+[
+  { "line": 6, "text": " <- :6-7 class Foo", "kind": "bracket", "openLine": 5, "closeLine": 6 },
+  { "line": 10, "text": " <- :10-11 struct Point", "kind": "bracket", "openLine": 9, "closeLine": 10 },
+  { "line": 14, "text": " <- :14-15 interface IThing", "kind": "bracket", "openLine": 13, "closeLine": 14 },
+  { "line": 18, "text": " <- :18-19 enum Color", "kind": "bracket", "openLine": 17, "closeLine": 18 },
+  { "line": 22, "text": " <- :22-23 record Person(string Name)", "kind": "bracket", "openLine": 21, "closeLine": 22 },
+  { "line": 28, "text": " <- :28-29 class Inner", "kind": "bracket", "openLine": 27, "closeLine": 28 },
+  { "line": 29, "text": " <- :26-30 class Outer", "kind": "bracket", "openLine": 25, "closeLine": 29 },
+  { "line": 30, "text": " <- :2-31 namespace Demo", "kind": "bracket", "openLine": 1, "closeLine": 30 }
+]
