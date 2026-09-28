@@ -1,3 +1,4 @@
+import { syntaxFor } from '../../src/core/language';
 import { scan } from '../../src/core/lexer/tokenizer';
 import { evaluateConditionals } from '../../src/core/match/evaluate';
 import { MacroDef } from '../../src/core/types';
@@ -8,16 +9,26 @@ export interface Predicates {
   blockActive: (line: number) => boolean | undefined;
 }
 
-/** The same condition evaluation the extension wires into `computeHints`. */
-export function predicates(text: string, seed: Record<string, string> = {}): Predicates {
+/**
+ * The same condition evaluation the extension wires into `computeHints`.
+ * `languageId` selects the syntax profile; the default (`c`) keeps the
+ * historical behavior.
+ */
+export function predicates(
+  text: string,
+  seed: Record<string, string> = {},
+  languageId = 'c'
+): Predicates {
   const macros = new Map<string, MacroDef>();
   for (const [name, value] of Object.entries(seed)) {
     macros.set(name, { value, functionLike: false });
   }
 
-  const result = evaluateConditionals(scan(text).directives, {
+  const syntax = syntaxFor(languageId);
+  const result = evaluateConditionals(scan(text, syntax).directives, {
     macros,
     trackFileDefines: true,
+    syntax,
   });
 
   return {
