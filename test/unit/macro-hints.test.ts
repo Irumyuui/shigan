@@ -33,7 +33,7 @@ describe('computeHints (macros)', () => {
   it('targets the preceding branch from each branch, and both from #endif', () => {
     const text = '#ifdef A\nx\n#elif defined(B)\ny\n#else\nz\n#endif\n';
     const hints = computeHints(text, { brackets: false, macros: true, trigger: 'always' });
-    expect(hints.map((h) => [h.line, h.parts?.map((part) => part.target)])).toEqual([
+    expect(hints.map((h) => [h.line, h.parts.map((part) => part.target)])).toEqual([
       [2, [{ line: 0, col: 0 }]],
       [4, [{ line: 2, col: 0 }]],
       [6, [{ line: 4, col: 0 }, { line: 0, col: 0 }]],

@@ -1,19 +1,15 @@
 import * as assert from 'assert';
 import * as vscode from 'vscode';
+import type { ComputedHint } from './support';
 
 const MAIN = 'int main(void) {\n}\n';
 const CHAIN = '#if X\n\n#else\n\n#endif\n';
 
-interface ComputedHint {
-  line: number;
-  text: string;
-  kind: string;
-  inactive: boolean;
-  target?: { line: number; col: number };
-  parts?: { text: string; target?: { line: number; col: number }; title?: string }[];
-}
-
-async function setTrigger(value: string | undefined): Promise<void> {
+/**
+ * Writes `shigan.trigger`. `undefined` is never written: removal proved
+ * unreliable, so the default (`cursor`) is written back explicitly instead.
+ */
+async function setTrigger(value: string): Promise<void> {
   await vscode.workspace
     .getConfiguration('shigan')
     .update('trigger', value, vscode.ConfigurationTarget.Workspace);
@@ -24,6 +20,14 @@ async function setShow(value: string[]): Promise<void> {
   await vscode.workspace
     .getConfiguration('shigan')
     .update('show', value, vscode.ConfigurationTarget.Workspace);
+  await delay(150);
+}
+
+/** Writes `shigan.rust.cfg`; the default `[]` is written back in `finally`. */
+async function setRustCfg(value: string[]): Promise<void> {
+  await vscode.workspace
+    .getConfiguration('shigan')
+    .update('rust.cfg', value, vscode.ConfigurationTarget.Workspace);
   await delay(150);
 }
 
@@ -49,7 +53,7 @@ suite('Shigan integration', () => {
       assert.ok(hovers && hovers.length > 0, 'expected at least one hover');
       assert.match(textOf(hovers), /:1-2/);
     } finally {
-      await setTrigger(undefined);
+      await setTrigger('cursor');
     }
   });
 
@@ -66,7 +70,7 @@ suite('Shigan integration', () => {
       assert.ok(hovers && hovers.length > 0, 'expected a hover on #else');
       assert.match(textOf(hovers), /:1-3/);
     } finally {
-      await setTrigger(undefined);
+      await setTrigger('cursor');
     }
   });
 
@@ -82,7 +86,7 @@ suite('Shigan integration', () => {
       assert.match(hints[0].text, /:1-2/);
       assert.deepStrictEqual(hints[0].target, { line: 0, col: 15 });
     } finally {
-      await setTrigger(undefined);
+      await setTrigger('cursor');
     }
   });
 
@@ -108,7 +112,7 @@ suite('Shigan integration', () => {
         `unexpected hints: ${JSON.stringify(hints)}`
       );
     } finally {
-      await setTrigger(undefined);
+      await setTrigger('cursor');
     }
   });
 
@@ -130,7 +134,7 @@ suite('Shigan integration', () => {
       ]);
 
       // The first segment jumps to the preceding branch ...
-      const previous = endif.parts?.[0]?.target;
+      const previous = endif.parts[0].target;
       assert.ok(previous, 'expected a target on the <- segment');
       await vscode.commands.executeCommand(
         'shigan.jumpToMatch',
@@ -141,7 +145,7 @@ suite('Shigan integration', () => {
       assert.strictEqual(vscode.window.activeTextEditor?.selection.active.line, 2);
 
       // ... and the second one to the opening #if.
-      const opener = endif.parts?.[1]?.target;
+      const opener = endif.parts[1].target;
       assert.ok(opener, 'expected a target on the <= segment');
       await vscode.commands.executeCommand(
         'shigan.jumpToMatch',
@@ -151,7 +155,7 @@ suite('Shigan integration', () => {
       );
       assert.strictEqual(vscode.window.activeTextEditor?.selection.active.line, 0);
     } finally {
-      await setTrigger(undefined);
+      await setTrigger('cursor');
     }
   });
 
@@ -183,7 +187,7 @@ suite('Shigan integration', () => {
       assert.match(markdown, /`#if X` — line 1/);
       assert.match(markdown, /```c\n#if X/);
     } finally {
-      await setTrigger(undefined);
+      await setTrigger('cursor');
     }
   });
 
@@ -243,7 +247,7 @@ suite('Shigan integration', () => {
       );
     } finally {
       await setShow(['brackets', 'macros']);
-      await setTrigger(undefined);
+      await setTrigger('cursor');
     }
   });
 
@@ -262,7 +266,63 @@ suite('Shigan integration', () => {
       assert.ok(conditional, `expected a Rust conditional hint: ${JSON.stringify(hints)}`);
       assert.strictEqual(conditional.inactive, false);
     } finally {
-      await setTrigger(undefined);
+      await setTrigger('cursor');
+    }
+  });
+
+  test('provides a Rust conditional hover with its kind and (inactive)', async () => {
+    await setTrigger('hover');
+    await setRustCfg(['-unix']);
+    try {
+      const doc = await vscode.workspace.openTextDocument({
+        language: 'rust',
+        content: '#[cfg(unix)]\nfn unix_only() {\n}\n',
+      });
+      await vscode.window.showTextDocument(doc);
+      const hovers = await vscode.commands.executeCommand<vscode.Hover[]>(
+        'vscode.executeHoverProvider',
+        doc.uri,
+        new vscode.Position(0, 2)
+      );
+      assert.ok(hovers && hovers.length > 0, 'expected a hover on the cfg attribute');
+      const markdown = textOf(hovers);
+      assert.match(markdown, /#\[cfg\(unix\)\]/);
+      assert.match(markdown, /\*conditional\*/);
+      assert.match(markdown, /\*\(inactive\)\*/);
+    } finally {
+      await setRustCfg([]);
+      await setTrigger('cursor');
+    }
+  });
+
+  test('fences the Rust inlay tooltip as rust, not c', async () => {
+    await setTrigger('always');
+    await setShow(['brackets', 'macros']);
+    try {
+      const doc = await vscode.workspace.openTextDocument({
+        language: 'rust',
+        content: 'fn main() {\n    let a = 1;\n}\n',
+      });
+      await vscode.window.showTextDocument(doc);
+      const hints = await vscode.commands.executeCommand<vscode.InlayHint[]>(
+        'vscode.executeInlayHintProvider',
+        doc.uri,
+        new vscode.Range(0, 0, doc.lineCount, 0)
+      );
+      assert.ok(Array.isArray(hints), 'vscode.executeInlayHintProvider returned no array');
+      const pair = hints.find((hint) => hint.position.line === 2);
+      assert.ok(pair, `expected a Rust bracket hint: ${JSON.stringify(hints)}`);
+
+      const label = pair.label;
+      assert.ok(Array.isArray(label) && label.length > 0, 'expected a split label');
+      const tooltip = label[0].tooltip;
+      assert.ok(tooltip, 'expected a tooltip on the bracket segment');
+      const markdown = tooltip instanceof vscode.MarkdownString ? tooltip.value : String(tooltip);
+      assert.match(markdown, /```rust/);
+      assert.doesNotMatch(markdown, /```c\n/);
+    } finally {
+      await setShow(['brackets', 'macros']);
+      await setTrigger('cursor');
     }
   });
 });

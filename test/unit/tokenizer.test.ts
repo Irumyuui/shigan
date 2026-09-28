@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { syntaxFor } from '../../src/core/language';
 import { scan } from '../../src/core/lexer/tokenizer';
+import { bracketChars } from './helpers';
 
 describe('tokenizer.brackets', () => {
   it('collects brackets outside comments and strings', () => {
@@ -87,8 +88,4 @@ describe('tokenizer.directives', () => {
   });
 });
 
-function bracketChars(text: string): string {
-  return scan(text)
-    .brackets.map((b) => b.char)
-    .join('');
-}
+

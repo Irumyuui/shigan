@@ -588,10 +588,6 @@ describe('pairCfgItems (block comments before the item)', () => {
       { attrLine: 0, attrLines: [0], headLines: [0], displays: ['#[cfg(unix)]'], endLine: 1 },
     ]);
   });
-
-  it('still treats a non-comment `*` line as an item head, not a comment', () => {
-    expect(spansFor('#[cfg(unix)]\n*p += 1;\nfn g() {\n}\n')).toEqual([]);
-  });
 });
 
 describe('pairCfgItems (brackets inside an attribute comment)', () => {

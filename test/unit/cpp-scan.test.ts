@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { C_SYNTAX, CPP_SYNTAX, syntaxFor } from '../../src/core/language';
 import { scan } from '../../src/core/lexer/tokenizer';
+import { bracketChars as characters } from './helpers';
 
 const CPP = syntaxFor('cpp');
 
+/** This suite scans with the C++ profile by default. */
 function bracketChars(text: string, syntax = CPP): string {
-  return scan(text, syntax)
-    .brackets.map((b) => b.char)
-    .join('');
+  return characters(text, syntax);
 }
 
 describe('tokenizer raw strings', () => {

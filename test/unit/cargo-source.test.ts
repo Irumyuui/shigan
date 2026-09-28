@@ -1,35 +1,20 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import { clearCargoCache, findCargoFeatures, hasAncestorManifest } from '../../src/cargo-source';
+import { cleanupTempDirs, makeTempDir, write } from './helpers';
 
-const tempRoots: string[] = [];
-
-function makeTempDir(): string {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'shigan-cargo-'));
-  tempRoots.push(dir);
-  return dir;
-}
-
-function write(filePath: string, content: string): void {
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, content, 'utf8');
-}
+afterEach(() => {
+  cleanupTempDirs();
+  clearCargoCache();
+});
 
 function manifest(feature: string): string {
   return ['[features]', `default = ["${feature}"]`, `${feature} = []`].join('\n');
 }
 
-afterEach(() => {
-  for (const root of tempRoots) fs.rmSync(root, { recursive: true, force: true });
-  tempRoots.length = 0;
-  clearCargoCache();
-});
-
 describe('findCargoFeatures', () => {
   it('finds the nearest Cargo.toml walking up from a nested source file', () => {
-    const root = makeTempDir();
+    const root = makeTempDir('shigan-cargo-');
     write(path.join(root, 'Cargo.toml'), manifest('root_feature'));
     write(path.join(root, 'crates', 'app', 'Cargo.toml'), manifest('app_feature'));
     const file = path.join(root, 'crates', 'app', 'src', 'main.rs');
@@ -43,7 +28,7 @@ describe('findCargoFeatures', () => {
   });
 
   it('uses the workspace manifest when no nearer one exists', () => {
-    const root = makeTempDir();
+    const root = makeTempDir('shigan-cargo-');
     write(path.join(root, 'Cargo.toml'), ['[workspace]', 'members = ["crates/*"]'].join('\n'));
     const file = path.join(root, 'crates', 'app', 'src', 'main.rs');
     write(file, '');
@@ -55,7 +40,7 @@ describe('findCargoFeatures', () => {
   });
 
   it('returns undefined when no manifest exists', () => {
-    const root = makeTempDir();
+    const root = makeTempDir('shigan-cargo-');
     const file = path.join(root, 'deep', 'nested', 'main.rs');
     write(file, '');
 
@@ -63,7 +48,7 @@ describe('findCargoFeatures', () => {
   });
 
   it('caches negative results until clearCargoCache', () => {
-    const root = makeTempDir();
+    const root = makeTempDir('shigan-cargo-');
     const file = path.join(root, 'src', 'main.rs');
     write(file, '');
 
@@ -78,7 +63,7 @@ describe('findCargoFeatures', () => {
   });
 
   it('caches per starting directory and clearCargoCache re-reads a rewrite', () => {
-    const root = makeTempDir();
+    const root = makeTempDir('shigan-cargo-');
     const file = path.join(root, 'src', 'main.rs');
     write(file, '');
     write(path.join(root, 'Cargo.toml'), manifest('alpha'));
@@ -101,7 +86,7 @@ describe('findCargoFeatures', () => {
   });
 
   it('caches undefined for a malformed manifest instead of throwing', () => {
-    const root = makeTempDir();
+    const root = makeTempDir('shigan-cargo-');
     const file = path.join(root, 'src', 'main.rs');
     write(file, '');
     write(path.join(root, 'Cargo.toml'), '[features\ndefault = ["a"]');
@@ -113,7 +98,7 @@ describe('findCargoFeatures', () => {
 
 describe('hasAncestorManifest', () => {
   it('is true when a parent directory also has a Cargo.toml', () => {
-    const root = makeTempDir();
+    const root = makeTempDir('shigan-cargo-');
     write(path.join(root, 'Cargo.toml'), ['[workspace]', 'members = ["member"]'].join('\n'));
     write(path.join(root, 'member', 'Cargo.toml'), manifest('member_feature'));
     const file = path.join(root, 'member', 'src', 'main.rs');
@@ -123,7 +108,7 @@ describe('hasAncestorManifest', () => {
   });
 
   it('is false when only the nearest manifest exists', () => {
-    const root = makeTempDir();
+    const root = makeTempDir('shigan-cargo-');
     write(path.join(root, 'Cargo.toml'), manifest('only_feature'));
     const file = path.join(root, 'src', 'main.rs');
     write(file, '');

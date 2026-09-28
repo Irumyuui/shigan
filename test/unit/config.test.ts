@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { readConfigFrom, ShiganConfig } from '../../src/core/settings';
 
 /** Adapts a plain settings object to the reader `readConfigFrom` expects. */
@@ -69,5 +71,49 @@ describe('readConfigFrom', () => {
 
   it('falls back to the default for a missing key', () => {
     expect(read({ trigger: 'always' }).showRange).toBe(true);
+  });
+});
+
+/**
+ * Setting key in `package.json` -> `ShiganConfig` field. Any contributed key not
+ * listed here fails the drift check, so a newly added setting cannot silently
+ * escape it.
+ */
+const FIELD_FOR_SETTING: Record<string, keyof ShiganConfig> = {
+  'shigan.enable': 'enable',
+  'shigan.languages': 'languages',
+  'shigan.trigger': 'trigger',
+  'shigan.show': 'show',
+  'shigan.compileFlags': 'compileFlags',
+  'shigan.inheritCompileCommands': 'inheritCompileCommands',
+  'shigan.csharp.define': 'csharpDefine',
+  'shigan.csharp.inheritProject': 'csharpInheritProject',
+  'shigan.csharp.configuration': 'csharpConfiguration',
+  'shigan.csharp.targetFramework': 'csharpTargetFramework',
+  'shigan.rust.cfg': 'rustCfg',
+  'shigan.rust.inheritCargo': 'rustInheritCargo',
+  'shigan.preprocessor.trackFileDefines': 'trackFileDefines',
+  'shigan.preprocessor.skipInactiveBrackets': 'skipInactiveBrackets',
+  'shigan.preprocessor.skipInactiveDirectives': 'skipInactiveDirectives',
+  'shigan.preprocessor.markInactive': 'markInactive',
+  'shigan.showRange': 'showRange',
+  'shigan.showRangeThreshold': 'rangeHideThreshold',
+  'shigan.showLabel': 'showLabel',
+};
+
+describe('contributed defaults', () => {
+  it('match the settings.ts fallbacks', () => {
+    const manifest = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8')) as {
+      contributes: { configuration: { properties: Record<string, { default: unknown }> } };
+    };
+    const properties = manifest.contributes.configuration.properties;
+    expect(Object.keys(properties).sort()).toEqual(Object.keys(FIELD_FOR_SETTING).sort());
+
+    const defaults = read();
+    for (const [key, field] of Object.entries(FIELD_FOR_SETTING)) {
+      expect(properties[key].default, `package.json default for ${key} drifted from settings.ts`).toEqual(
+        defaults[field]
+      );
+    }
   });
 });

@@ -1,21 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import { clearCsprojCache, findCsprojSymbols } from '../../src/csproj-source';
-
-const tempRoots: string[] = [];
-
-function makeTempDir(): string {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'shigan-csproj-'));
-  tempRoots.push(dir);
-  return dir;
-}
-
-function write(filePath: string, content: string): void {
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, content, 'utf8');
-}
+import { cleanupTempDirs, makeTempDir, write } from './helpers';
 
 /** Minimal SDK-style csproj with optional target framework. */
 function project(defines: string, targetFramework?: string): string {
@@ -45,14 +31,13 @@ function props(defines: string, targetFramework?: string): string {
 }
 
 afterEach(() => {
-  for (const root of tempRoots) fs.rmSync(root, { recursive: true, force: true });
-  tempRoots.length = 0;
+  cleanupTempDirs();
   clearCsprojCache();
 });
 
 describe('findCsprojSymbols', () => {
   it('finds the nearest csproj walking up from a nested file', () => {
-    const root = makeTempDir();
+    const root = makeTempDir('shigan-csproj-');
     write(path.join(root, 'App.csproj'), project('ROOT_SYMBOL'));
     write(path.join(root, 'src', 'Inner.csproj'), project('INNER_SYMBOL'));
     const file = path.join(root, 'src', 'sub', 'Program.cs');
@@ -66,7 +51,7 @@ describe('findCsprojSymbols', () => {
   });
 
   it('picks the alphabetically first csproj in a directory', () => {
-    const root = makeTempDir();
+    const root = makeTempDir('shigan-csproj-');
     write(path.join(root, 'Alpha.csproj'), project('ALPHA_SYMBOL'));
     write(path.join(root, 'Beta.csproj'), project('BETA_SYMBOL'));
     const file = path.join(root, 'Program.cs');
@@ -79,7 +64,7 @@ describe('findCsprojSymbols', () => {
   });
 
   it('chains Directory.Build.props root-most first and appends across files', () => {
-    const root = makeTempDir();
+    const root = makeTempDir('shigan-csproj-');
     write(path.join(root, 'Directory.Build.props'), props('FROM_OUTER'));
     write(path.join(root, 'src', 'Directory.Build.props'), props('$(DefineConstants);FROM_INNER'));
     write(path.join(root, 'src', 'My.csproj'), project('$(DefineConstants);FROM_CSPROJ'));
@@ -96,7 +81,7 @@ describe('findCsprojSymbols', () => {
   });
 
   it('takes targetFramework from the csproj and honours the explicit override', () => {
-    const root = makeTempDir();
+    const root = makeTempDir('shigan-csproj-');
     write(path.join(root, 'App.csproj'), project('A', 'net8.0'));
     const file = path.join(root, 'Program.cs');
     write(file, '');
@@ -106,7 +91,7 @@ describe('findCsprojSymbols', () => {
   });
 
   it('falls back to the nearest Directory.Build.props target framework', () => {
-    const root = makeTempDir();
+    const root = makeTempDir('shigan-csproj-');
     write(path.join(root, 'Directory.Build.props'), props('PROPS_SYMBOL', 'netstandard2.0'));
     const file = path.join(root, 'src', 'Program.cs');
     write(file, '');
@@ -118,7 +103,7 @@ describe('findCsprojSymbols', () => {
   });
 
   it('merges frameworkSymbols into the result', () => {
-    const root = makeTempDir();
+    const root = makeTempDir('shigan-csproj-');
     write(path.join(root, 'App.csproj'), project('APP_SYMBOL', 'net8.0'));
     const file = path.join(root, 'Program.cs');
     write(file, '');
@@ -132,7 +117,7 @@ describe('findCsprojSymbols', () => {
   });
 
   it('returns undefined when no project files exist', () => {
-    const root = makeTempDir();
+    const root = makeTempDir('shigan-csproj-');
     const file = path.join(root, 'deep', 'nested', 'Program.cs');
     write(file, '');
 
@@ -140,7 +125,7 @@ describe('findCsprojSymbols', () => {
   });
 
   it('caches per starting directory and clearCsprojCache resets it', () => {
-    const root = makeTempDir();
+    const root = makeTempDir('shigan-csproj-');
     const file = path.join(root, 'Program.cs');
     write(file, '');
     write(path.join(root, 'App.csproj'), project('ALPHA'));

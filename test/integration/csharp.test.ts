@@ -7,15 +7,14 @@ import {
   applyBaseline,
   bracketAt,
   computedHints,
-  delay,
+  createFixtureSuite,
   macroAt,
   openFixture,
   pollHints,
   pollUntil,
-  restoreTouched,
+  restoreWorkspaceSettings,
   set,
-  WATCH_POLL_INTERVAL_MS,
-  WATCH_POLL_TIMEOUT_MS,
+  withWorkspaceWritable,
 } from './support';
 
 /**
@@ -136,42 +135,21 @@ const TYPES_PROBE = [
   '#endregion',
 ].join('\n');
 
-suite('Shigan C#', () => {
-  let fixtureDir = '';
-
-  suiteSetup(async () => {
-    const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    assert.ok(root, 'the test workspace folder is missing');
-
-    fixtureDir = join(root, 'fixture', 'csharp');
-    mkdirSync(fixtureDir, { recursive: true });
-    writeFileSync(join(fixtureDir, 'LangProbe.csproj'), CSPROJ);
-    writeFileSync(join(fixtureDir, 'probe.cs'), CSHARP_PROBE);
-    writeFileSync(join(fixtureDir, 'probe-settings.cs'), SETTINGS_PROBE);
-    writeFileSync(join(fixtureDir, 'probe-types.cs'), TYPES_PROBE);
-
-    // Best effort: make sure the command exists before the first query.
-    const extension = vscode.extensions.getExtension('miyana-tobari.shigan');
-    if (extension && !extension.isActive) await extension.activate();
-
-    await applyBaseline();
-  });
-
-  suiteTeardown(async () => {
-    if (fixtureDir) rmSync(fixtureDir, { recursive: true, force: true });
-    await applyBaseline();
-  });
-
-  teardown(async () => {
-    await restoreTouched();
-  });
-
+createFixtureSuite(
+  'Shigan C#',
+  {
+    'LangProbe.csproj': CSPROJ,
+    'probe.cs': CSHARP_PROBE,
+    'probe-settings.cs': SETTINGS_PROBE,
+    'probe-types.cs': TYPES_PROBE,
+  },
+  (fixture) => {
   test('C# project DefineConstants drive #if DEBUG', async () => {
     // Match inactive branches too, so their hints are observable (flagged
     // `inactive`) instead of being dropped from the matching.
     await set('preprocessor.skipInactiveBrackets', false);
 
-    const document = await openFixture(fixtureDir, 'probe.cs', 'csharp');
+    const document = await openFixture(fixture.dir, 'probe.cs', 'csharp');
     assert.strictEqual(document.languageId, 'csharp');
 
     const withProject = await computedHints();
@@ -195,7 +173,7 @@ suite('Shigan C#', () => {
   });
 
   test('a value-less #define makes #if LOCALONLY live', async () => {
-    await openFixture(fixtureDir, 'probe.cs', 'csharp');
+    await openFixture(fixture.dir, 'probe.cs', 'csharp');
     const hints = await computedHints();
     const local = bracketAt(hints, 21);
     assert.ok(local, `the #if LOCALONLY body should be hinted: ${JSON.stringify(hints)}`);
@@ -203,7 +181,7 @@ suite('Shigan C#', () => {
   });
 
   test('C# verbatim strings are opaque', async () => {
-    await openFixture(fixtureDir, 'probe.cs', 'csharp');
+    await openFixture(fixture.dir, 'probe.cs', 'csharp');
     const hints = await computedHints();
 
     assert.strictEqual(
@@ -220,7 +198,7 @@ suite('Shigan C#', () => {
     // Match inactive branches too, so the flag is observable rather than the
     // hint being dropped (`skipInactiveBrackets` defaults to true).
     await set('preprocessor.skipInactiveBrackets', false);
-    await openFixture(fixtureDir, 'probe-settings.cs', 'csharp');
+    await openFixture(fixture.dir, 'probe-settings.cs', 'csharp');
 
     const before = bracketAt(await computedHints(), 6);
     assert.ok(before, 'the #if VIA_SETTING body should be hinted');
@@ -234,7 +212,7 @@ suite('Shigan C#', () => {
 
   test('shigan.compileFlags select #if symbols for C#', async () => {
     await set('preprocessor.skipInactiveBrackets', false);
-    await openFixture(fixtureDir, 'probe-settings.cs', 'csharp');
+    await openFixture(fixture.dir, 'probe-settings.cs', 'csharp');
 
     const before = bracketAt(await computedHints(), 17);
     assert.ok(before, 'the #if VIACOMPILER body should be hinted');
@@ -248,7 +226,7 @@ suite('Shigan C#', () => {
 
   test('shigan.csharp.targetFramework drives implicit framework symbols', async () => {
     await set('preprocessor.skipInactiveBrackets', false);
-    await openFixture(fixtureDir, 'probe-settings.cs', 'csharp');
+    await openFixture(fixture.dir, 'probe-settings.cs', 'csharp');
 
     const inherited = bracketAt(await computedHints(), 39);
     assert.ok(inherited, 'the #if NET8_0_OR_GREATER body should be hinted');
@@ -262,7 +240,7 @@ suite('Shigan C#', () => {
 
   test('shigan.csharp.configuration selects the project PropertyGroup', async () => {
     await set('preprocessor.skipInactiveBrackets', false);
-    await openFixture(fixtureDir, 'probe-settings.cs', 'csharp');
+    await openFixture(fixture.dir, 'probe-settings.cs', 'csharp');
 
     const debug = bracketAt(await computedHints(), 28);
     assert.ok(debug, 'the #if RELEASE_ONLY body should be hinted');
@@ -275,7 +253,7 @@ suite('Shigan C#', () => {
   });
 
   test('#region pairs with #endregion', async () => {
-    await openFixture(fixtureDir, 'probe-types.cs', 'csharp');
+    await openFixture(fixture.dir, 'probe-types.cs', 'csharp');
     const hints = await computedHints();
 
     const endregion = macroAt(hints, 6);
@@ -288,7 +266,7 @@ suite('Shigan C#', () => {
   });
 
   test('a wrapped declaration is labelled by its class line', async () => {
-    await openFixture(fixtureDir, 'probe-types.cs', 'csharp');
+    await openFixture(fixture.dir, 'probe-types.cs', 'csharp');
     const hints = await computedHints();
 
     const classPair = bracketAt(hints, 5);
@@ -303,7 +281,7 @@ suite('Shigan C#', () => {
     );
     assert.strictEqual(classPair.target?.line, 4, 'the pair should open on the lone `{`');
   });
-});
+}, { dirName: 'csharp' });
 
 /**
  * Watcher fixtures. `watch.cs` pins line 7 as the close of the `#if DEBUG`
@@ -352,53 +330,30 @@ const WATCH_CSPROJ_NO_DEBUG = [
   '</Project>',
 ].join('\n');
 
-suite('Shigan C# project watching', () => {
-  let fixtureDir = '';
-
-  suiteSetup(async () => {
-    const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    assert.ok(root, 'the test workspace folder is missing');
-
-    fixtureDir = join(root, 'fixture', 'watch');
-    mkdirSync(fixtureDir, { recursive: true });
-    writeFileSync(join(fixtureDir, 'watch.cs'), WATCH_PROBE);
-
-    // Best effort: make sure the csproj watcher is registered before we touch it.
-    const extension = vscode.extensions.getExtension('miyana-tobari.shigan');
-    if (extension && !extension.isActive) await extension.activate();
-
-    await applyBaseline();
-  });
-
-  suiteTeardown(async () => {
-    if (fixtureDir) rmSync(fixtureDir, { recursive: true, force: true });
-    await applyBaseline();
-  });
-
-  teardown(async () => {
-    await restoreTouched();
-  });
-
+createFixtureSuite(
+  'Shigan C# project watching',
+  { 'watch.cs': WATCH_PROBE },
+  (fixture) => {
   test('editing Watch.csproj flips the #if DEBUG body without a reload', async () => {
     await set('preprocessor.skipInactiveBrackets', false);
-    writeFileSync(join(fixtureDir, 'Watch.csproj'), WATCH_CSPROJ_DEBUG);
-    await openFixture(fixtureDir, 'watch.cs', 'csharp');
+    writeFileSync(join(fixture.dir, 'Watch.csproj'), WATCH_CSPROJ_DEBUG);
+    await openFixture(fixture.dir, 'watch.cs', 'csharp');
     await waitForDebugBranch(false, 'DEBUG defined by the csproj');
 
     // The file stays present, only its symbols change: the watcher must notice.
-    writeFileSync(join(fixtureDir, 'Watch.csproj'), WATCH_CSPROJ_NO_DEBUG);
+    writeFileSync(join(fixture.dir, 'Watch.csproj'), WATCH_CSPROJ_NO_DEBUG);
     await waitForDebugBranch(true, 'DEBUG removed but the csproj kept');
   });
 
   test('deleting Watch.csproj drops the project symbols', async () => {
     await set('preprocessor.skipInactiveBrackets', false);
     // Force fresh watcher events regardless of what a previous test left behind.
-    rmSync(join(fixtureDir, 'Watch.csproj'), { force: true });
-    writeFileSync(join(fixtureDir, 'Watch.csproj'), WATCH_CSPROJ_DEBUG);
-    await openFixture(fixtureDir, 'watch.cs', 'csharp');
+    rmSync(join(fixture.dir, 'Watch.csproj'), { force: true });
+    writeFileSync(join(fixture.dir, 'Watch.csproj'), WATCH_CSPROJ_DEBUG);
+    await openFixture(fixture.dir, 'watch.cs', 'csharp');
     await waitForDebugBranch(false, 'DEBUG defined by the csproj');
 
-    rmSync(join(fixtureDir, 'Watch.csproj'), { force: true });
+    rmSync(join(fixture.dir, 'Watch.csproj'), { force: true });
     await waitForDebugBranch(true, 'the csproj was deleted');
   });
 
@@ -407,16 +362,16 @@ suite('Shigan C# project watching', () => {
     // Deterministic "no project" start: even if an earlier test failed before
     // its own delete (or left a stale project cache), writing then removing the
     // csproj guarantees the watcher fires and the cache is cleared.
-    const csprojPath = join(fixtureDir, 'Watch.csproj');
+    const csprojPath = join(fixture.dir, 'Watch.csproj');
     writeFileSync(csprojPath, WATCH_CSPROJ_NO_DEBUG);
     rmSync(csprojPath, { force: true });
-    await openFixture(fixtureDir, 'watch.cs', 'csharp');
+    await openFixture(fixture.dir, 'watch.cs', 'csharp');
     await waitForDebugBranch(true, 'no csproj at all');
 
     writeFileSync(csprojPath, WATCH_CSPROJ_DEBUG);
     await waitForDebugBranch(false, 'the csproj was created with DEBUG');
   });
-});
+}, { dirName: 'watch' });
 
 const MULTIROOT_NAME = 'shigan-multiroot';
 
@@ -506,37 +461,4 @@ function waitForDebugBranch(inactive: boolean, label: string): Promise<ComputedH
     (hints) => bracketAt(hints, WATCH_DEBUG_BODY_CLOSE)?.inactive === inactive,
     `${label}: expected the #if DEBUG body to be ${inactive ? 'inactive' : 'live'}`
   );
-}
-
-/**
- * Retries a workspace-settings write until it succeeds. Adding/removing a
- * workspace folder edits the generated `.code-workspace` file, and for a short
- * window afterwards VS Code rejects further settings writes with "Unable to
- * write into workspace settings because the file has unsaved changes". Saving
- * and retrying bridges that window; without it the dirty file would poison every
- * later suite's `applyBaseline`.
- */
-async function withWorkspaceWritable(action: () => Promise<void>): Promise<void> {
-  const deadline = Date.now() + WATCH_POLL_TIMEOUT_MS;
-  for (;;) {
-    try {
-      await action();
-      return;
-    } catch (error) {
-      if (Date.now() >= deadline) throw error;
-      console.log('[multi-root] workspace settings file was dirty; saved it and retrying');
-      await vscode.workspace.saveAll();
-      await delay(WATCH_POLL_INTERVAL_MS);
-    }
-  }
-}
-
-/** Restores touched settings, and proves the workspace file is writable again. */
-async function restoreWorkspaceSettings(): Promise<void> {
-  await restoreTouched();
-  // Force one real workspace-settings write even when no setting was touched,
-  // so a dirty `.code-workspace` file is detected (and retried) rather than left
-  // behind for the next suite.
-  const config = vscode.workspace.getConfiguration('shigan');
-  await config.update('enable', config.get('enable'), vscode.ConfigurationTarget.Workspace);
 }

@@ -1,5 +1,6 @@
 import * as assert from 'assert';
-import { join } from 'node:path';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import * as vscode from 'vscode';
 
 export interface ComputedHint {
@@ -8,6 +9,7 @@ export interface ComputedHint {
   kind: string;
   inactive: boolean;
   target?: { line: number; col: number };
+  parts: { text: string; target?: { line: number; col: number }; title?: string }[];
 }
 
 /**
@@ -153,4 +155,130 @@ export async function pollUntil(predicate: () => boolean, message: string): Prom
     }
     await delay(WATCH_POLL_INTERVAL_MS);
   }
+}
+
+/** Absolute path to the primary workspace folder; fails if it is missing. */
+export function fixtureRoot(): string {
+  const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  assert.ok(root, 'the test workspace folder is missing');
+  return root;
+}
+
+/**
+ * Creates `fixture/<name>` under the primary workspace folder and writes every
+ * `files` entry (a relative path) into it, creating parent directories. Returns
+ * the fixture dir. Only this suite's own directory is touched.
+ */
+export function createFixture(name: string, files: Record<string, string>): string {
+  const dir = join(fixtureRoot(), 'fixture', name);
+  mkdirSync(dir, { recursive: true });
+  for (const [relative, content] of Object.entries(files)) {
+    const target = join(dir, relative);
+    mkdirSync(dirname(target), { recursive: true });
+    writeFileSync(target, content);
+  }
+  return dir;
+}
+
+/** Removes a fixture dir (recursive, force) created by {@link createFixture}. */
+export function removeFixture(dir: string): void {
+  rmSync(dir, { recursive: true, force: true });
+}
+
+/**
+ * Retries a workspace-settings write until it succeeds. Adding/removing a
+ * workspace folder edits the generated `.code-workspace` file, and for a short
+ * window afterwards VS Code rejects further settings writes with "Unable to
+ * write into workspace settings because the file has unsaved changes". Saving
+ * and retrying bridges that window; without it the dirty file would poison every
+ * later suite's `applyBaseline`.
+ */
+export async function withWorkspaceWritable(action: () => Promise<void>): Promise<void> {
+  const deadline = Date.now() + WATCH_POLL_TIMEOUT_MS;
+  for (;;) {
+    try {
+      await action();
+      return;
+    } catch (error) {
+      if (Date.now() >= deadline) throw error;
+      console.log('[multi-root] workspace settings file was dirty; saved it and retrying');
+      await vscode.workspace.saveAll();
+      await delay(WATCH_POLL_INTERVAL_MS);
+    }
+  }
+}
+
+/** Restores touched settings, and proves the workspace file is writable again. */
+export async function restoreWorkspaceSettings(): Promise<void> {
+  await restoreTouched();
+  // Force one real workspace-settings write even when no setting was touched,
+  // so a dirty `.code-workspace` file is detected (and retried) rather than left
+  // behind for the next suite.
+  const config = vscode.workspace.getConfiguration('shigan');
+  await config.update('enable', config.get('enable'), vscode.ConfigurationTarget.Workspace);
+}
+
+/** Best effort: make sure the extension is active before the first query. */
+export async function activateShigan(): Promise<void> {
+  const extension = vscode.extensions.getExtension('miyana-tobari.shigan');
+  if (extension && !extension.isActive) await extension.activate();
+}
+
+/** Mutable handle for the fixture dir, assigned by {@link createFixtureSuite}. */
+export interface FixtureHandle {
+  /** Absolute path to `fixture/<dirName>`; valid once `suiteSetup` has run. */
+  dir: string;
+}
+
+export interface FixtureSuiteOptions {
+  /** Fixture subdirectory name; defaults to the suite name. */
+  dirName?: string;
+  /** Extra setup after `applyBaseline()`; use for content that needs `dir`. */
+  setup?: (fixture: FixtureHandle) => void | Promise<void>;
+  /** Per-test hook run before `restoreTouched()`. */
+  afterEach?: () => void | Promise<void>;
+  /** Suite teardown hook run before the fixture dir is removed. */
+  teardown?: () => void | Promise<void>;
+}
+
+/**
+ * Registers the shared integration-suite shape: create `fixture/<dirName>`,
+ * activate the extension, apply the settings baseline, restore touched settings
+ * after every test, and remove only this suite's fixture dir on teardown.
+ *
+ * `shell` owns the actual tests and receives the {@link FixtureHandle} so it can
+ * open and rewrite fixture files; `files` are written once in `suiteSetup`.
+ */
+export function createFixtureSuite(
+  name: string,
+  files: Record<string, string>,
+  shell: (fixture: FixtureHandle) => void,
+  options: FixtureSuiteOptions = {}
+): FixtureHandle {
+  const fixture: FixtureHandle = { dir: '' };
+  suite(name, () => {
+    suiteSetup(async () => {
+      fixture.dir = createFixture(options.dirName ?? name, files);
+      await activateShigan();
+      await applyBaseline();
+      await options.setup?.(fixture);
+    });
+
+    suiteTeardown(async () => {
+      try {
+        await options.teardown?.();
+      } finally {
+        if (fixture.dir) removeFixture(fixture.dir);
+        await applyBaseline();
+      }
+    });
+
+    teardown(async () => {
+      await options.afterEach?.();
+      await restoreTouched();
+    });
+
+    shell(fixture);
+  });
+  return fixture;
 }

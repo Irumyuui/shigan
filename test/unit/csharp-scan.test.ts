@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { syntaxFor } from '../../src/core/language';
 import { scan } from '../../src/core/lexer/tokenizer';
+import { bracketChars as characters } from './helpers';
 
 const CSHARP = syntaxFor('csharp');
 
+/** This suite scans with the C# profile by default. */
 function bracketChars(text: string, syntax = CSHARP): string {
-  return scan(text, syntax)
-    .brackets.map((b) => b.char)
-    .join('');
+  return characters(text, syntax);
 }
 
 describe('tokenizer C# literals', () => {

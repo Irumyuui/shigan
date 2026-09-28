@@ -1,15 +1,9 @@
 import * as assert from 'assert';
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as vscode from 'vscode';
 import type { ComputedHint } from './support';
-import {
-  applyBaseline,
-  computedHints,
-  delay,
-  restoreTouched,
-  set,
-} from './support';
+import { computedHints, createFixtureSuite, delay, set } from './support';
 
 const MAIN = 'int main(void) {\n}\n';
 const MACRO_ONLY = '#if X\n\n#else\n\n#endif\n';
@@ -21,52 +15,14 @@ const A_ONLY_BLOCK = '#if A_ONLY\nint a;\n#endif\n';
 const B_ONLY_BLOCK = '#if B_ONLY\nint b;\n#endif\n';
 
 /** Every setting gets one test that proves its effect on the rendered hints. */
-suite('Shigan settings', () => {
-  let fixtureDir = '';
-
-  suiteSetup(async () => {
-    const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    assert.ok(root, 'the test workspace folder is missing');
-
-    fixtureDir = join(root, 'fixture', 'settings');
-    mkdirSync(fixtureDir, { recursive: true });
-    writeFileSync(join(fixtureDir, 'flag-inherit.c'), '#if FEATURE\nint a;\n#endif\n');
-    writeFileSync(join(fixtureDir, 'flag-a.c'), A_ONLY_BLOCK);
-    writeFileSync(join(fixtureDir, 'flag-b.c'), B_ONLY_BLOCK);
-    writeFileSync(
-      join(fixtureDir, 'compile_commands.json'),
-      JSON.stringify([
-        {
-          directory: fixtureDir,
-          file: 'flag-inherit.c',
-          command: 'cc -DFEATURE -c flag-inherit.c',
-        },
-        {
-          directory: fixtureDir,
-          file: 'flag-a.c',
-          command: 'cc -DA_ONLY -c flag-a.c',
-        },
-        {
-          directory: fixtureDir,
-          file: 'flag-b.c',
-          command: 'cc -DB_ONLY -c flag-b.c',
-        },
-      ])
-    );
-
-    // Start from a known state, even if a previous run left settings behind.
-    await applyBaseline();
-  });
-
-  suiteTeardown(async () => {
-    if (fixtureDir) rmSync(fixtureDir, { recursive: true, force: true });
-    await applyBaseline();
-  });
-
-  teardown(async () => {
-    await restoreTouched();
-  });
-
+createFixtureSuite(
+  'Shigan settings',
+  {
+    'flag-inherit.c': '#if FEATURE\nint a;\n#endif\n',
+    'flag-a.c': A_ONLY_BLOCK,
+    'flag-b.c': B_ONLY_BLOCK,
+  },
+  (fixture) => {
   test('shigan.enable = false disables everything', async () => {
     await set('enable', false);
     assert.deepStrictEqual(await hintsFor(MAIN), []);
@@ -90,6 +46,11 @@ suite('Shigan settings', () => {
 
     await set('show', []);
     assert.deepStrictEqual(await hintsFor(MAIN), []);
+    assert.deepStrictEqual(
+      await hintsFor(MACRO_ONLY),
+      [],
+      'an empty show list must hide macro hints too'
+    );
   });
 
   test('shigan.showRange and shigan.showRangeThreshold', async () => {
@@ -185,11 +146,11 @@ suite('Shigan settings', () => {
 
   test('shigan.inheritCompileCommands', async () => {
     await set('inheritCompileCommands', false);
-    const without = await hintsForFile('flag-inherit.c');
+    const without = await hintsForFile(fixture.dir, 'flag-inherit.c');
     assert.strictEqual(without[0]?.inactive, true, JSON.stringify(without));
 
     await set('inheritCompileCommands', true);
-    const withFlags = await hintsForFile('flag-inherit.c');
+    const withFlags = await hintsForFile(fixture.dir, 'flag-inherit.c');
     assert.strictEqual(withFlags.length, 1, JSON.stringify(withFlags));
     assert.strictEqual(
       withFlags[0].inactive,
@@ -202,15 +163,41 @@ suite('Shigan settings', () => {
     await set('inheritCompileCommands', true);
     // Open a then b: both live in the same directory, so a per-directory cache
     // holding a per-file answer would let a's flags leak into b.
-    const a = await hintsForFile('flag-a.c');
-    const b = await hintsForFile('flag-b.c');
+    const a = await hintsForFile(fixture.dir, 'flag-a.c');
+    const b = await hintsForFile(fixture.dir, 'flag-b.c');
     assert.deepStrictEqual(
       { a: a.map((hint) => [hint.line, hint.inactive]), b: b.map((hint) => [hint.line, hint.inactive]) },
       { a: [[2, false]], b: [[2, false]] },
       `each file should see only its own flag: ${JSON.stringify({ a, b })}`
     );
   });
-});
+},
+{
+  dirName: 'settings',
+  setup: (fixture) => {
+    writeFileSync(
+      join(fixture.dir, 'compile_commands.json'),
+      JSON.stringify([
+        {
+          directory: fixture.dir,
+          file: 'flag-inherit.c',
+          command: 'cc -DFEATURE -c flag-inherit.c',
+        },
+        {
+          directory: fixture.dir,
+          file: 'flag-a.c',
+          command: 'cc -DA_ONLY -c flag-a.c',
+        },
+        {
+          directory: fixture.dir,
+          file: 'flag-b.c',
+          command: 'cc -DB_ONLY -c flag-b.c',
+        },
+      ])
+    );
+  },
+}
+);
 
 async function hintsFor(content: string): Promise<ComputedHint[]> {
   const document = await vscode.workspace.openTextDocument({ language: 'c', content });
@@ -219,12 +206,8 @@ async function hintsFor(content: string): Promise<ComputedHint[]> {
   return computedHints();
 }
 
-async function hintsForFile(name: string): Promise<ComputedHint[]> {
-  const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-  assert.ok(root, 'the test workspace folder is missing');
-  const document = await vscode.workspace.openTextDocument(
-    vscode.Uri.file(join(root, 'fixture', 'settings', name))
-  );
+async function hintsForFile(dir: string, name: string): Promise<ComputedHint[]> {
+  const document = await vscode.workspace.openTextDocument(vscode.Uri.file(join(dir, name)));
   await vscode.window.showTextDocument(document);
   await delay(20);
   return computedHints();

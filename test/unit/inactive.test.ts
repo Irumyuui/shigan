@@ -31,6 +31,21 @@ describe('inactive branches', () => {
     ]);
   });
 
+  it('does not flag a bracket pair inactive when markInactive is off', () => {
+    // The same inactive-branch pair as above, but `markInactive: false` must
+    // leave it unmarked (and still matched) instead of hiding or flagging it.
+    const hints = computeHints(TEXT, {
+      brackets: true,
+      macros: false,
+      trigger: 'always',
+      skipInactiveBrackets: false,
+      markInactive: false,
+      ...predicates(TEXT),
+    });
+    expect(hints).toEqual([expect.objectContaining({ line: 2, text: ' <- :1-3 int g(void)' })]);
+    expect(hints[0].inactive).toBeUndefined();
+  });
+
   it('reports inactive pairs in cursor mode, flagged as inactive', () => {
     const hints = computeHints(TEXT, {
       brackets: true,

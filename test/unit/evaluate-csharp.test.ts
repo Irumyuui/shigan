@@ -3,6 +3,7 @@ import { syntaxFor } from '../../src/core/language';
 import { scan } from '../../src/core/lexer/tokenizer';
 import { evaluateConditionals } from '../../src/core/match/c-preprocessor';
 import { MacroDef } from '../../src/core/types';
+import { sortedLines } from './helpers';
 
 function evaluateCSharp(text: string, seed: Record<string, string> = {}) {
   const macros = new Map<string, MacroDef>();
@@ -10,10 +11,6 @@ function evaluateCSharp(text: string, seed: Record<string, string> = {}) {
     macros.set(name, { value, functionLike: false });
   }
   return evaluateConditionals(scan(text).directives, { macros, syntax: syntaxFor('csharp') });
-}
-
-function sortedLines(lines: Set<number>): number[] {
-  return [...lines].sort((a, b) => a - b);
 }
 
 describe('evaluateConditionals (C#)', () => {
