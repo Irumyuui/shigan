@@ -25,9 +25,26 @@ export interface DirectiveToken {
   offset: number;
 }
 
+/** A Rust `#[cfg(...)]` / `#[cfg_attr(...)]` attribute (or its `#![...]` form). */
+export interface CfgAttributeToken {
+  /** `cfg` or `cfg_attr`. */
+  name: 'cfg' | 'cfg_attr';
+  /** True for an inner attribute (`#![…]`). */
+  inner: boolean;
+  /** Normalized attribute text, e.g. `#[cfg(all(unix, feature = "a"))]`. */
+  display: string;
+  line: number;
+  /** Inclusive end line for multi-line attributes. */
+  endLine: number;
+  offset: number;
+  col: number;
+}
+
 export interface ScanResult {
   brackets: BracketToken[];
   directives: DirectiveToken[];
+  /** Rust-only: recognized `cfg` attributes (undefined for C-family scans). */
+  cfgs?: CfgAttributeToken[];
 }
 
 export type HintKind = 'bracket' | 'macro';
