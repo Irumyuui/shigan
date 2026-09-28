@@ -1,7 +1,7 @@
 import { ConditionalHint, ConditionalModel, ConditionalSegment } from '../../conditionals';
 import { ScanResult } from '../../types';
 import { evaluateCfgPredicate, RustCfgEnvironment } from './cfg';
-import { pairCfgItems } from './items';
+import { CfgItemSpan, pairCfgItems } from './items';
 
 export interface RustConditionalInput {
   scanned: ScanResult;
@@ -29,7 +29,7 @@ export function rustConditionals(input: RustConditionalInput): ConditionalModel 
   const inactiveLines = new Set<number>();
 
   for (const span of pairCfgItems(scanned, lines)) {
-    const inactive = andPredicates(span.displays, environment) === false;
+    const inactive = spanValue(span, environment) === false;
 
     const segments: ConditionalSegment[] = span.displays.map((display, index) => ({
       marker: ' <- ',
@@ -70,4 +70,31 @@ function andPredicates(
     if (value === undefined) result = undefined;
   }
   return result;
+}
+
+/** The AND result for one span under `environment`. */
+function spanValue(span: CfgItemSpan, environment: RustCfgEnvironment): boolean | undefined {
+  return andPredicates(span.displays, environment);
+}
+
+/**
+ * Spans whose predicate is fully decided by `environment.explicit` alone
+ * (Kleene result `true` or `false`, never `undefined`). These are the spans a
+ * user's `shigan.rust.cfg` entries determine, so rust-analyzer's diagnostics
+ * must not override them.
+ */
+export function explicitDecidedSpans(
+  input: RustConditionalInput
+): Array<{ attrLine: number; endLine: number; inactive: boolean }> {
+  const explicitEnvironment: RustCfgEnvironment = { explicit: input.environment.explicit };
+  const decided: Array<{ attrLine: number; endLine: number; inactive: boolean }> = [];
+
+  for (const span of pairCfgItems(input.scanned, input.lines)) {
+    const value = spanValue(span, explicitEnvironment);
+    if (value !== undefined) {
+      decided.push({ attrLine: span.attrLine, endLine: span.endLine, inactive: value === false });
+    }
+  }
+
+  return decided;
 }

@@ -1,8 +1,15 @@
 import * as vscode from 'vscode';
 import { readConfig, ShiganConfig } from './config';
+import { languageKind } from './core/language';
 import { JUMP_COMMAND, ShiganInlayHintsProvider } from './render/inlayHints';
 import { registerHoverProvider } from './render/hover';
-import { computeDocumentHints, DecorationTrigger, invalidate, invalidateProjectFiles } from './service';
+import {
+  computeDocumentHints,
+  DecorationTrigger,
+  invalidate,
+  invalidateProjectFiles,
+  noteRustDiagnosticsChanged,
+} from './service';
 import { versionChange } from './version';
 
 const REFRESH_DELAY_MS = 60;
@@ -69,6 +76,28 @@ export function activate(context: vscode.ExtensionContext): void {
       if (config.trigger === 'cursor' || config.trigger === 'always') scheduleRefresh();
     }),
     vscode.window.onDidChangeActiveTextEditor(() => scheduleRefresh()),
+    vscode.languages.onDidChangeDiagnostics((event) => {
+      if (event.uris.length === 0) {
+        // The API can fire with no URIs when diagnostics are cleared; bump
+        // every known document and refresh.
+        noteRustDiagnosticsChanged([]);
+        scheduleRefresh();
+        return;
+      }
+
+      const rustUris = event.uris
+        .filter((uri) => {
+          const document = vscode.workspace.textDocuments.find(
+            (candidate) => candidate.uri.toString() === uri.toString()
+          );
+          return document !== undefined && languageKind(document.languageId) === 'rust';
+        })
+        .map((uri) => uri.toString());
+
+      if (rustUris.length === 0) return;
+      noteRustDiagnosticsChanged(rustUris);
+      scheduleRefresh();
+    }),
     vscode.workspace.onDidChangeConfiguration((event) => {
       if (!event.affectsConfiguration('shigan')) return;
       config = readConfig();

@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { createVariableResolver, ShiganConfig } from './config';
+import { ConditionalHint, ConditionalModel } from './core/conditionals';
 import { mergeCSharpMacros } from './core/csharp';
 import { parseCompileFlags } from './core/flags';
 import { computeHints } from './core/hints';
@@ -8,11 +9,13 @@ import { scanRust } from './core/lexer/rust';
 import { scan } from './core/lexer/tokenizer';
 import { evaluateConditionals } from './core/match/c-preprocessor';
 import { hostCfg, parseRustCfgEntries, RustCfgEnvironment } from './core/match/rust/cfg';
-import { rustConditionals } from './core/match/rust/conditionals';
+import { explicitDecidedSpans, rustConditionals } from './core/match/rust/conditionals';
+import { mergeRustInactiveLines } from './core/match/rust/diagnostics';
 import { Hint, MacroDef, Trigger } from './core/types';
 import { clearCargoCache, findCargoFeatures, hasAncestorManifest } from './cargo-source';
 import { clearCsprojCache, findCsprojSymbols } from './csproj-source';
 import { clearCompileCommandCache, findCompileCommandFlags } from './flags-source';
+import { readRustDiagnostics } from './rust-diagnostics';
 
 export type DecorationTrigger = 'cursor' | 'always';
 
@@ -30,9 +33,39 @@ const hintCache = new Map<
     languageId: string;
     trigger: Trigger;
     cursorOffset: number;
+    diagnosticsRevision: number;
     hints: Hint[];
   }
 >();
+
+/**
+ * Per-URI counter bumped whenever rust-analyzer's diagnostics for that document
+ * may have changed. It is part of the hint cache key so hover and the diagnostic
+ * command (which call `computeDocumentHints` without a refresh) never serve a
+ * stale activity answer.
+ */
+const diagnosticsRevisions = new Map<string, number>();
+
+function revisionOf(uri: string): number {
+  return diagnosticsRevisions.get(uri) ?? 0;
+}
+
+/**
+ * Records that diagnostics changed for `uris`. An empty list is a blanket
+ * bump: the API can fire with no URIs when diagnostics are cleared.
+ */
+export function noteRustDiagnosticsChanged(uris: readonly string[]): void {
+  if (uris.length === 0) {
+    for (const [key, value] of diagnosticsRevisions) diagnosticsRevisions.set(key, value + 1);
+    return;
+  }
+  for (const uri of uris) diagnosticsRevisions.set(uri, revisionOf(uri) + 1);
+}
+
+/** Clears the diagnostic revisions (tests / full invalidation). */
+export function resetRustDiagnosticsRevisions(): void {
+  diagnosticsRevisions.clear();
+}
 
 /** Drops all caches. Call when settings or the workspace folders change. */
 export function invalidate(): void {
@@ -42,6 +75,7 @@ export function invalidate(): void {
   clearCompileCommandCache();
   clearCsprojCache();
   clearCargoCache();
+  diagnosticsRevisions.clear();
 }
 
 /**
@@ -55,6 +89,7 @@ export function invalidateProjectFiles(): void {
   hintCache.clear();
   clearCsprojCache();
   clearCargoCache();
+  diagnosticsRevisions.clear();
 }
 
 /**
@@ -78,6 +113,7 @@ export function computeDocumentHints(
     cached.version === document.version &&
     cached.generation === generation &&
     cached.languageId === document.languageId &&
+    cached.diagnosticsRevision === revisionOf(key) &&
     cached.trigger === trigger &&
     cached.cursorOffset === cursorOffset
   ) {
@@ -89,11 +125,40 @@ export function computeDocumentHints(
   let hints: Hint[];
   if (languageKind(document.languageId) === 'rust') {
     const scanned = scanRust(text);
-    const model = rustConditionals({
-      scanned,
-      lines: text.split(/\r?\n/),
-      environment: rustEnvironment(document, config),
+    const lines = text.split(/\r?\n/);
+    const environment = rustEnvironment(document, config);
+    const model = rustConditionals({ scanned, lines, environment });
+
+    // rust-analyzer's diagnostics are authoritative when present (or when the
+    // extension is active); explicit `shigan.rust.cfg`-decided spans still win.
+    const explicitSpanLines = new Set<number>();
+    const explicitInactiveLines = new Set<number>();
+    for (const span of explicitDecidedSpans({ scanned, lines, environment })) {
+      for (let line = span.attrLine; line <= span.endLine; line++) explicitSpanLines.add(line);
+      if (span.inactive) {
+        for (let line = span.attrLine; line <= span.endLine; line++) {
+          explicitInactiveLines.add(line);
+        }
+      }
+    }
+
+    const diagnostics = readRustDiagnostics(document);
+    const merged = mergeRustInactiveLines({
+      lexicalLines: model.inactiveLines ?? new Set<number>(),
+      explicitSpanLines,
+      explicitInactiveLines,
+      diagnostics: diagnostics.ranges,
+      authoritative: diagnostics.authoritative,
+      lineCount: lines.length,
     });
+    // Re-derive the model flags so a span rust-analyzer calls inactive shows
+    // `(inactive)` even when the lexical model said active (and vice versa for
+    // explicitly-decided spans).
+    const adjustedModel: ConditionalModel = {
+      ...model,
+      hints: model.hints.map((hint) => ({ ...hint, inactive: hintInactiveIn(hint, merged) })),
+    };
+
     hints = computeHints(text, {
       brackets: config.show.includes('brackets'),
       macros: config.show.includes('macros'),
@@ -102,12 +167,12 @@ export function computeDocumentHints(
       showRange: config.showRange,
       rangeHideThreshold: config.rangeHideThreshold,
       showLabel: config.showLabel,
-      inactive: (line) => model.inactiveLines?.has(line) === true,
+      inactive: (line) => merged.has(line),
       skipInactiveBrackets: config.skipInactiveBrackets,
       skipInactiveDirectives: config.skipInactiveDirectives,
       markInactive: config.markInactive,
       scanned,
-      conditionals: model,
+      conditionals: adjustedModel,
     });
   } else {
     const syntax = syntaxFor(document.languageId);
@@ -142,9 +207,20 @@ export function computeDocumentHints(
     languageId: document.languageId,
     trigger,
     cursorOffset,
+    diagnosticsRevision: revisionOf(key),
     hints,
   });
   return hints;
+}
+
+/** Whether any line of a model hint's span is in the merged inactive set. */
+function hintInactiveIn(hint: ConditionalHint, merged: ReadonlySet<number>): boolean {
+  const from = Math.min(hint.cursorFrom, hint.cursorTo);
+  const to = Math.max(hint.cursorFrom, hint.cursorTo);
+  for (let line = from; line <= to; line++) {
+    if (merged.has(line)) return true;
+  }
+  return false;
 }
 
 /**
