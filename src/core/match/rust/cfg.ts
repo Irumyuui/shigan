@@ -48,37 +48,51 @@ const RECOGNIZED_PLATFORMS = new Set([
   'haiku',
 ]);
 
+/** Node platform ids whose target triple is observable, mapped to the Rust name. */
+const PLATFORM_ALIASES: Record<string, string> = {
+  win32: 'windows',
+  darwin: 'macos',
+  sunos: 'solaris',
+};
+
 /** Node `process.arch` values that map to a Rust target arch. */
 const ARCH_ALIASES: Record<string, string> = {
   x64: 'x86_64',
   arm64: 'aarch64',
   ia32: 'x86',
+  ppc: 'powerpc',
+  ppc64: 'powerpc64',
+  ppc64le: 'powerpc64le',
+  loong64: 'loongarch64',
+  s390: 's390x',
 };
 
-/** Pointer width (bits) implied by a normalized Rust target arch. */
-const ARCH_POINTER_WIDTH: Record<string, '32' | '64'> = {
-  x86_64: '64',
-  aarch64: '64',
-  x86: '32',
-  i386: '32',
-  i586: '32',
-  i686: '32',
-  arm: '32',
-  ppc64: '64',
-  ppc64le: '64',
-  powerpc64: '64',
-  powerpc64le: '64',
-  mips: '32',
-  mipsel: '32',
-  mips64: '64',
-  mips64el: '64',
-  riscv32: '32',
-  riscv64: '64',
-  s390x: '64',
-  sparc64: '64',
-  loong64: '64',
-  loongarch64: '64',
-  wasm32: '32',
+/**
+ * Facts derivable from a normalized Rust target arch. `undefined` (an arch not
+ * in this table) means the dimension is NOT observed and must stay unknown —
+ * never guessed false.
+ */
+const ARCH_FACTS: Record<string, { width: '32' | '64'; endian: 'little' | 'big' }> = {
+  x86: { width: '32', endian: 'little' },
+  i386: { width: '32', endian: 'little' },
+  i586: { width: '32', endian: 'little' },
+  i686: { width: '32', endian: 'little' },
+  x86_64: { width: '64', endian: 'little' },
+  arm: { width: '32', endian: 'little' },
+  aarch64: { width: '64', endian: 'little' },
+  mips: { width: '32', endian: 'big' },
+  mipsel: { width: '32', endian: 'little' },
+  mips64: { width: '64', endian: 'big' },
+  mips64el: { width: '64', endian: 'little' },
+  powerpc: { width: '32', endian: 'big' },
+  powerpc64: { width: '64', endian: 'big' },
+  powerpc64le: { width: '64', endian: 'little' },
+  riscv32: { width: '32', endian: 'little' },
+  riscv64: { width: '64', endian: 'little' },
+  s390x: { width: '64', endian: 'big' },
+  sparc64: { width: '64', endian: 'big' },
+  loongarch64: { width: '64', endian: 'little' },
+  wasm32: { width: '32', endian: 'little' },
 };
 
 /** Key-value predicates that live in the platform namespace. */
@@ -289,11 +303,7 @@ function resolveCanonical(
   if (explicit !== undefined) return explicit;
 
   if (isPlatformAtom(canonical)) {
-    const host = environment.host;
-    // No observed host: never guess a platform. With a host, the namespace is
-    // fully known, so an unlisted platform atom is definitely false.
-    if (!host || host.size === 0) return undefined;
-    return host.has(canonical);
+    return resolvePlatformAtom(canonical, environment.host);
   }
 
   const feature = featureName(canonical);
@@ -316,13 +326,50 @@ function isPlatformAtom(canonical: string): boolean {
   return PLATFORM_PREFIXES.some((prefix) => canonical.startsWith(prefix));
 }
 
+/**
+ * Resolves a platform atom against the host's observed predicates. A dimension
+ * the host never observed (the set has no key for it) is unknown, never false;
+ * a dimension the host DID observe is fully known, so a differing value is
+ * definitely false.
+ */
+function resolvePlatformAtom(
+  canonical: string,
+  host: ReadonlySet<string> | undefined
+): boolean | undefined {
+  if (!host || host.size === 0) return undefined;
+
+  if (canonical === 'unix' || canonical === 'windows') {
+    const observed =
+      host.has('unix') || host.has('windows') || observesPrefix(host, 'target_family="');
+    return observed ? host.has(canonical) : undefined;
+  }
+
+  const prefix = PLATFORM_PREFIXES.find((candidate) => canonical.startsWith(candidate));
+  if (!prefix || !observesPrefix(host, prefix)) return undefined;
+  return host.has(canonical);
+}
+
+/** True when the host recorded any predicate in the given key-value dimension. */
+function observesPrefix(host: ReadonlySet<string>, prefix: string): boolean {
+  for (const predicate of host) {
+    if (predicate.startsWith(prefix)) return true;
+  }
+  return false;
+}
+
 /** Extracts `x` from `feature="x"`, or `undefined` for any other predicate. */
 function featureName(canonical: string): string | undefined {
   if (!canonical.startsWith(FEATURE_PREFIX) || !canonical.endsWith('"')) return undefined;
   return canonical.slice(FEATURE_PREFIX.length, -1);
 }
 
-/** Host-observed platform predicates for a Node `process.platform` / `process.arch` pair. */
+/**
+ * Host-observed platform predicates for a Node `process.platform` / `process.arch`
+ * pair. Only dimensions genuinely derived from the host are emitted: an OS or
+ * arch that does not map to a Rust target contributes nothing, and `target_env`
+ * is only known on Windows (msvc) — on other hosts gnu vs musl is not
+ * observable, so the dimension stays absent and thus unknown.
+ */
 export function hostCfg(
   platform: string,
   arch: string
@@ -337,20 +384,32 @@ export function hostCfg(
   predicates.add(windows ? 'windows' : 'unix');
   predicates.add(`target_family="${windows ? 'windows' : 'unix'}"`);
 
-  const targetOs = platform === 'win32' ? 'windows' : platform === 'darwin' ? 'macos' : platform;
+  const targetOs = PLATFORM_ALIASES[platform] ?? platform;
   predicates.add(`target_os="${targetOs}"`);
 
-  const targetArch = ARCH_ALIASES[arch] ?? arch;
-  predicates.add(`target_arch="${targetArch}"`);
+  const targetArch = normalizeArch(arch);
+  if (targetArch) {
+    predicates.add(`target_arch="${targetArch}"`);
 
-  const width = ARCH_POINTER_WIDTH[targetArch];
-  if (width) predicates.add(`target_pointer_width="${width}"`);
+    const facts = ARCH_FACTS[targetArch];
+    if (facts) {
+      predicates.add(`target_pointer_width="${facts.width}"`);
+      predicates.add(`pointer_width="${facts.width}"`);
+      predicates.add(`target_endian="${facts.endian}"`);
+    }
+  }
 
   if (windows) predicates.add('target_env="msvc"');
 
   // `test` and `debug_assertions` are intentionally NOT emitted: guessing them
   // would mark live code inactive.
   return { predicates, recognized: true };
+}
+
+/** Maps a Node `process.arch` to a known Rust arch, or `undefined` when it does not map. */
+function normalizeArch(arch: string): string | undefined {
+  const mapped = ARCH_ALIASES[arch] ?? arch;
+  return mapped in ARCH_FACTS ? mapped : undefined;
 }
 
 function isIdentifierStart(c: string | undefined): boolean {

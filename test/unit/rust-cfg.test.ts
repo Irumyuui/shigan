@@ -135,7 +135,70 @@ describe('hostCfg', () => {
     expect(evaluateCfgPredicate('target_os="macos"', environment)).toBe(true);
     expect(evaluateCfgPredicate('unix', environment)).toBe(true);
     expect(evaluateCfgPredicate('windows', environment)).toBe(false);
-    expect(evaluateCfgPredicate('target_env="msvc"', environment)).toBe(false);
+    // `target_env` is not observable off Windows (gnu vs musl), so it stays
+    // unknown — it must never be guessed false and hide live code.
+    expect(evaluateCfgPredicate('target_env="msvc"', environment)).toBeUndefined();
+  });
+});
+
+describe('hostCfg - only observed platform dimensions are decided', () => {
+  const environment = (platform: string, arch: string): RustCfgEnvironment => ({
+    host: hostCfg(platform, arch).predicates,
+  });
+
+  it('decides target_endian from a known arch', () => {
+    const little = environment('linux', 'x64');
+    expect(evaluateCfgPredicate('target_endian="little"', little)).toBe(true);
+    expect(evaluateCfgPredicate('target_endian="big"', little)).toBe(false);
+
+    const big = environment('linux', 's390x');
+    expect(evaluateCfgPredicate('target_endian="big"', big)).toBe(true);
+    expect(evaluateCfgPredicate('target_endian="little"', big)).toBe(false);
+  });
+
+  it('leaves target_env unknown off Windows and keeps msvc on Windows', () => {
+    const linux = environment('linux', 'x64');
+    expect(evaluateCfgPredicate('target_env="gnu"', linux)).toBeUndefined();
+    expect(evaluateCfgPredicate('target_env="musl"', linux)).toBeUndefined();
+
+    const windows = environment('win32', 'x64');
+    expect(evaluateCfgPredicate('target_env="msvc"', windows)).toBe(true);
+  });
+
+  it('exposes the legacy pointer_width alias when the width is known', () => {
+    const linux = environment('linux', 'x64');
+    expect(evaluateCfgPredicate('pointer_width="64"', linux)).toBe(true);
+    expect(evaluateCfgPredicate('pointer_width="32"', linux)).toBe(false);
+  });
+
+  it('aliases ppc64 to powerpc64 with its own width and endianness', () => {
+    const ppc = environment('linux', 'ppc64');
+    expect(evaluateCfgPredicate('target_arch="powerpc64"', ppc)).toBe(true);
+    expect(evaluateCfgPredicate('target_pointer_width="64"', ppc)).toBe(true);
+    expect(evaluateCfgPredicate('target_pointer_width="32"', ppc)).toBe(false);
+    expect(evaluateCfgPredicate('target_endian="big"', ppc)).toBe(true);
+  });
+
+  it('aliases loong64 to loongarch64', () => {
+    const loong = environment('linux', 'loong64');
+    expect(evaluateCfgPredicate('target_arch="loongarch64"', loong)).toBe(true);
+    expect(evaluateCfgPredicate('target_pointer_width="64"', loong)).toBe(true);
+  });
+
+  it('aliases sunos to the solaris target os', () => {
+    expect(evaluateCfgPredicate('target_os="solaris"', environment('sunos', 'x64'))).toBe(true);
+  });
+
+  it('leaves every dimension of an unmapped arch unknown, never false', () => {
+    const unknown = environment('linux', 'unknown-arch');
+    expect(evaluateCfgPredicate('target_arch="unknown-arch"', unknown)).toBeUndefined();
+    expect(evaluateCfgPredicate('target_arch="x86_64"', unknown)).toBeUndefined();
+    expect(evaluateCfgPredicate('target_pointer_width="64"', unknown)).toBeUndefined();
+    expect(evaluateCfgPredicate('target_pointer_width="32"', unknown)).toBeUndefined();
+    expect(evaluateCfgPredicate('pointer_width="64"', unknown)).toBeUndefined();
+    expect(evaluateCfgPredicate('target_endian="little"', unknown)).toBeUndefined();
+    // The OS was still observed, so that dimension stays decided.
+    expect(evaluateCfgPredicate('target_os="linux"', unknown)).toBe(true);
   });
 });
 
