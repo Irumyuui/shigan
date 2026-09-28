@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { createVariableResolver, ShiganConfig } from './config';
 import { parseCompileFlags } from './core/flags';
 import { computeHints } from './core/hints';
+import { syntaxFor } from './core/language';
 import { scan } from './core/lexer/tokenizer';
 import { evaluateConditionals } from './core/match/evaluate';
 import { Hint, MacroDef, Trigger } from './core/types';
@@ -55,7 +56,8 @@ export function computeDocumentHints(
   }
 
   const text = document.getText();
-  const scanned = scan(text);
+  const syntax = syntaxFor(document.languageId);
+  const scanned = scan(text, syntax);
   const macros = documentMacros(document, config);
   const evaluation = evaluateConditionals(scanned.directives, {
     macros,
