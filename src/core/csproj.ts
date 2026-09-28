@@ -129,6 +129,16 @@ export function parseDefineConstants(xml: string, options: CsprojOptions = {}): 
 }
 
 /**
+ * Resolves the target framework from raw project XML, stripping XML comments
+ * first. This is the lightweight counterpart of {@link parseDefineConstants}
+ * for callers that only need the framework: it skips the symbol scan entirely,
+ * which is measurably cheaper on large projects.
+ */
+export function extractTargetFramework(xml: string): string | undefined {
+  return findTargetFramework(stripXmlComments(xml));
+}
+
+/**
  * Returns the implicit preprocessor symbols the .NET SDK defines for a target
  * framework moniker (normalised to lowercase). Unknown or unsupported monikers
  * yield `[]`. The result is sorted ascending for deterministic comparisons.

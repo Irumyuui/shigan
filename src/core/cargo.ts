@@ -334,19 +334,8 @@ class TomlScanner {
     const arrayOfTables = this.text[this.index + 1] === '[';
     this.index += arrayOfTables ? 2 : 1;
 
-    const segments: string[] = [];
-    for (;;) {
-      this.skipInlineWhitespace();
-      const segment = this.readKeySegment();
-      if (segment === undefined) return undefined;
-      segments.push(segment);
-      this.skipInlineWhitespace();
-      if (this.text[this.index] === '.') {
-        this.index++;
-        continue;
-      }
-      break;
-    }
+    const segments = this.readDottedKey();
+    if (segments === undefined) return undefined;
 
     if (arrayOfTables) {
       if (this.text[this.index] === ']' && this.text[this.index + 1] === ']') {
@@ -363,19 +352,8 @@ class TomlScanner {
   }
 
   private readAssignment(table: string[]): Assignment | undefined {
-    const keySegments: string[] = [];
-    for (;;) {
-      this.skipInlineWhitespace();
-      const segment = this.readKeySegment();
-      if (segment === undefined) return undefined;
-      keySegments.push(segment);
-      this.skipInlineWhitespace();
-      if (this.text[this.index] === '.') {
-        this.index++;
-        continue;
-      }
-      break;
-    }
+    const keySegments = this.readDottedKey();
+    if (keySegments === undefined) return undefined;
 
     this.skipInlineWhitespace();
     if (this.text[this.index] !== '=') return undefined;
@@ -486,16 +464,7 @@ class TomlScanner {
         return true;
       }
 
-      for (;;) {
-        this.skipInlineWhitespace();
-        if (this.readKeySegment() === undefined) return false;
-        this.skipInlineWhitespace();
-        if (this.text[this.index] === '.') {
-          this.index++;
-          continue;
-        }
-        break;
-      }
+      if (this.readDottedKey() === undefined) return false;
 
       this.skipInlineWhitespace();
       if (this.text[this.index] !== '=') return false;
@@ -514,6 +483,28 @@ class TomlScanner {
       }
       return false;
     }
+  }
+
+  /**
+   * Reads a dotted key (`a.b.c`) and returns its segments, or `undefined` when
+   * a segment is missing. Shared by table headers, assignments and inline
+   * tables so all three accept the same spelling.
+   */
+  private readDottedKey(): string[] | undefined {
+    const segments: string[] = [];
+    for (;;) {
+      this.skipInlineWhitespace();
+      const segment = this.readKeySegment();
+      if (segment === undefined) return undefined;
+      segments.push(segment);
+      this.skipInlineWhitespace();
+      if (this.text[this.index] === '.') {
+        this.index++;
+        continue;
+      }
+      break;
+    }
+    return segments;
   }
 
   /** Bare or quoted key segment; bare keys stop at TOML delimiters. */

@@ -39,6 +39,11 @@ describe('parseCompileFlags', () => {
     expect(unknown).toEqual(['-Wall']);
   });
 
+  it('collects a non-flag token as unknown exactly once', () => {
+    expect(parseCompileFlags(['foo']).unknown).toEqual(['foo']);
+    expect(parseCompileFlags(['-Wall', '-Wextra']).unknown).toEqual(['-Wall', '-Wextra']);
+  });
+
   it('substitutes variables', () => {
     const { macros } = parseCompileFlags(['-DPATH=${workspaceFolder}'], (v) =>
       v === 'workspaceFolder' ? '/ws' : undefined

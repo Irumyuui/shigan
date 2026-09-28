@@ -5,21 +5,22 @@
  * differences. Which *kind* of language an id is — and therefore which
  * pipeline handles it — is a separate decision, so callers dispatch on
  * {@link languageKind} first and only consult {@link syntaxFor} for the C
- * family (`c`/`cpp`/`csharp`). A future non-C language (e.g. Rust) registers a
- * kind without a syntax profile.
+ * family (`c`/`cpp`/`csharp`). A kind without a syntax profile (Rust, today)
+ * is still a first-class kind; it simply scans through its own pipeline.
  *
  * This module is deliberately VSCode-free: the VSCode layer resolves a profile
  * from `document.languageId` and passes it down.
  */
+
+/** Identifier of a C-family lexical profile. */
+export type SyntaxId = 'c' | 'cpp' | 'csharp';
+
 export interface LanguageSyntax {
   /** Internal identifier of the profile, e.g. `c`. */
-  id: string;
+  id: SyntaxId;
   /** Whether C++-style raw string literals (`R"(...)"`) are recognized. */
   rawStrings: boolean;
-  /**
-   * Whether C# verbatim (`@"..."`) and interpolated literals are recognized.
-   * Reserved for a future C# profile; inert today.
-   */
+  /** Whether C# verbatim (`@"..."`) and interpolated literals are recognized. */
   csharpLiterals: boolean;
 }
 
@@ -53,7 +54,12 @@ interface LanguageEntry {
   syntax?: LanguageSyntax;
 }
 
-const BY_LANGUAGE_ID: Record<string, LanguageEntry> = {
+/**
+ * Every known language id. Typed as `Record<LanguageKind, LanguageEntry>` so a
+ * new kind cannot be added without an entry here (the compiler rejects the
+ * incomplete record).
+ */
+const BY_LANGUAGE_ID: Record<LanguageKind, LanguageEntry> = {
   c: { kind: 'c', syntax: C_SYNTAX },
   cpp: { kind: 'cpp', syntax: CPP_SYNTAX },
   csharp: { kind: 'csharp', syntax: CSHARP_SYNTAX },
@@ -63,11 +69,22 @@ const BY_LANGUAGE_ID: Record<string, LanguageEntry> = {
 const DEFAULT_LANGUAGE: LanguageEntry = { kind: 'c', syntax: C_SYNTAX };
 
 /**
+ * Looks up an exact language id, falling back to the C entry for unknown ids.
+ * Own-property checked so prototype names (`toString`, …) also fall back
+ * instead of resolving to a non-entry.
+ */
+function entryFor(languageId: string): LanguageEntry {
+  return Object.prototype.hasOwnProperty.call(BY_LANGUAGE_ID, languageId)
+    ? BY_LANGUAGE_ID[languageId as LanguageKind]
+    : DEFAULT_LANGUAGE;
+}
+
+/**
  * Resolves the kind of language for a VSCode language id. Unknown ids fall back
  * to `c`, mirroring the profile fallback below.
  */
 export function languageKind(languageId: string): LanguageKind {
-  return (BY_LANGUAGE_ID[languageId] ?? DEFAULT_LANGUAGE).kind;
+  return entryFor(languageId).kind;
 }
 
 /**
@@ -77,5 +94,5 @@ export function languageKind(languageId: string): LanguageKind {
  * unknown id get {@link C_SYNTAX}, so an absent profile scans exactly like C.
  */
 export function syntaxFor(languageId: string): LanguageSyntax {
-  return (BY_LANGUAGE_ID[languageId] ?? DEFAULT_LANGUAGE).syntax ?? C_SYNTAX;
+  return entryFor(languageId).syntax ?? C_SYNTAX;
 }

@@ -35,7 +35,6 @@ describe('rustConditionals', () => {
       inactive: false,
       cursorFrom: 0,
       cursorTo: 2,
-      isEndif: false,
     });
     expect(m.hints[0].segments).toEqual([
       { marker: ' <- ', fromLine: 0, toLine: 2, display: '#[cfg(unix)]', target: { line: 0, col: 0 } },

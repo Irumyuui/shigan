@@ -44,9 +44,8 @@ describe('cConditionals', () => {
 
   it('builds a two-segment #endif for multi-branch blocks', () => {
     const model = cConditionals(scan('#if X\nint a;\n#else\nint b;\n#endif\n').directives);
-    const endif = model.hints.find((hint) => hint.isEndif);
+    const endif = model.hints.find((hint) => hint.cursorFrom > hint.cursorTo);
     expect(endif).toBeDefined();
-    expect(endif?.openerLine).toBe(0);
     expect(endif?.cursorFrom).toBe(4);
     expect(endif?.cursorTo).toBe(0);
     expect(endif?.segments).toHaveLength(2);
@@ -55,7 +54,7 @@ describe('cConditionals', () => {
 
   it('builds a single-segment #endif for single-branch blocks', () => {
     const model = cConditionals(scan('#if X\nint a;\n#endif\n').directives);
-    const endif = model.hints.find((hint) => hint.isEndif);
+    const endif = model.hints.find((hint) => hint.cursorFrom > hint.cursorTo);
     expect(endif?.segments).toHaveLength(1);
     expect(endif?.segments[0].marker).toBe(' <- ');
   });
@@ -77,7 +76,6 @@ describe('cConditionals', () => {
       cursorTo,
       segments: [],
       inactive: false,
-      isEndif: false,
       kind: 'macro',
     });
 

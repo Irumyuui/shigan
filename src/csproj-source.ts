@@ -1,6 +1,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { frameworkSymbols, parseDefineConstants } from './core/csproj';
+import { extractTargetFramework, frameworkSymbols, parseDefineConstants } from './core/csproj';
 
 /**
  * Node-only filesystem layer around {@link parseDefineConstants}. It locates
@@ -161,12 +161,9 @@ function resolveTargetFramework(
   let csprojFramework: string | undefined;
   let propsFramework: string | undefined;
   for (const file of files) {
-    const parsed = parseDefineConstants(file.text, {
-      configuration: options.configuration,
-      platform: options.platform,
-    });
-    if (file.candidate.kind === 'csproj') csprojFramework = parsed.targetFramework;
-    else if (file.candidate.filePath === nearestPropsPath) propsFramework = parsed.targetFramework;
+    const targetFramework = extractTargetFramework(file.text);
+    if (file.candidate.kind === 'csproj') csprojFramework = targetFramework;
+    else if (file.candidate.filePath === nearestPropsPath) propsFramework = targetFramework;
   }
 
   return csprojFramework ?? propsFramework;

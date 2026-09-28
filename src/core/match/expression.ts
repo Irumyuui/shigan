@@ -1,3 +1,4 @@
+import { isIdentPart, isIdentStart } from '../ident';
 import { MacroDef } from '../types';
 
 type Token =
@@ -381,14 +382,6 @@ const SIMPLE_ESCAPES: Record<string, number> = {
   '"': 34,
   '?': 63,
 };
-
-function isIdentStart(c: string): boolean {
-  return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c === '_';
-}
-
-function isIdentPart(c: string): boolean {
-  return isIdentStart(c) || (c >= '0' && c <= '9');
-}
 
 function isHexDigit(c: string): boolean {
   return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');

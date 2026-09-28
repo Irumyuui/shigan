@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { frameworkSymbols, parseDefineConstants } from '../../src/core/csproj';
+import { extractTargetFramework, frameworkSymbols, parseDefineConstants } from '../../src/core/csproj';
 
 /** Stable comparison helper: a Set has no meaningful JSON representation. */
 function symbols(xml: string, options?: Parameters<typeof parseDefineConstants>[1]): string[] {
@@ -296,6 +296,47 @@ describe('parseDefineConstants', () => {
       </Project>`;
 
     expect(symbols(xml)).toEqual(['FUNCTION_CONDITION']);
+  });
+});
+
+describe('extractTargetFramework', () => {
+  it('reads <TargetFramework> after stripping comments', () => {
+    const xml = `
+      <Project>
+        <!-- <TargetFramework>net48</TargetFramework> -->
+        <PropertyGroup>
+          <TargetFramework>net8.0</TargetFramework>
+        </PropertyGroup>
+      </Project>`;
+
+    expect(extractTargetFramework(xml)).toBe('net8.0');
+  });
+
+  it('falls back to the first <TargetFrameworks> entry', () => {
+    const xml = `
+      <Project>
+        <PropertyGroup>
+          <TargetFrameworks>net48;net8.0</TargetFrameworks>
+        </PropertyGroup>
+      </Project>`;
+
+    expect(extractTargetFramework(xml)).toBe('net48');
+  });
+
+  it('returns undefined when no framework is declared', () => {
+    expect(extractTargetFramework('<Project />')).toBeUndefined();
+  });
+
+  it('agrees with parseDefineConstants on the framework', () => {
+    const xml = `
+      <Project>
+        <PropertyGroup>
+          <DefineConstants>DEBUG</DefineConstants>
+          <TargetFramework>netstandard2.0</TargetFramework>
+        </PropertyGroup>
+      </Project>`;
+
+    expect(extractTargetFramework(xml)).toBe(parseDefineConstants(xml).targetFramework);
   });
 });
 

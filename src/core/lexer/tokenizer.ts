@@ -1,3 +1,4 @@
+import { countNewlines } from '../ident';
 import { C_SYNTAX, LanguageSyntax } from '../language';
 import { BracketToken, DirectiveToken, ScanResult } from '../types';
 
@@ -111,8 +112,7 @@ export function scan(text: string, syntax: LanguageSyntax = C_SYNTAX): ScanResul
    * runs to the end of the logical line, so backslash-newline continuations are
    * followed.
    */
-  const skipLineComment = (k: number, syntax: LanguageSyntax): number => {
-    void syntax; // C-only for now; reserved for future profiles.
+  const skipLineComment = (k: number): number => {
     let j = k + 2;
     while (j < n) {
       const cont = skipSplice(j);
@@ -127,8 +127,7 @@ export function scan(text: string, syntax: LanguageSyntax = C_SYNTAX): ScanResul
   };
 
   /** End index (exclusive) of the block comment starting at `k`. */
-  const skipBlockComment = (k: number, syntax: LanguageSyntax): number => {
-    void syntax; // C-only for now; reserved for future profiles.
+  const skipBlockComment = (k: number): number => {
     const close = text.indexOf('*/', k + 2);
     return close < 0 ? n : close + 2;
   };
@@ -138,8 +137,7 @@ export function scan(text: string, syntax: LanguageSyntax = C_SYNTAX): ScanResul
    * `k` whose opening delimiter is `quote`. Handles backslash escapes and
    * backslash-newline splices, and stops at an unescaped newline.
    */
-  const skipQuoted = (k: number, quote: string, syntax: LanguageSyntax): number => {
-    void syntax; // Profile-specific literal forms are handled before this helper.
+  const skipQuoted = (k: number, quote: string): number => {
     let j = k + 1;
     while (j < n) {
       const ch = text[j];
@@ -185,10 +183,10 @@ export function scan(text: string, syntax: LanguageSyntax = C_SYNTAX): ScanResul
    */
   const skipNestedLiteral = (k: number, depth: number): number => {
     const c = text[k];
-    if (c === "'") return skipQuoted(k, "'", syntax);
+    if (c === "'") return skipQuoted(k, "'");
     const cs = skipCSharpLiteral(k, depth);
     if (cs >= 0) return cs;
-    return c === '"' ? skipQuoted(k, '"', syntax) : k;
+    return c === '"' ? skipQuoted(k, '"') : k;
   };
 
   /**
@@ -251,7 +249,7 @@ export function scan(text: string, syntax: LanguageSyntax = C_SYNTAX): ScanResul
         continue;
       }
       if (ch === '/' && text[j + 1] === '/') {
-        j = skipLineComment(j, syntax);
+        j = skipLineComment(j);
         continue;
       }
       if (ch === '/' && text[j + 1] === '*') {
@@ -261,7 +259,7 @@ export function scan(text: string, syntax: LanguageSyntax = C_SYNTAX): ScanResul
           // of the document.
           return lineLimit(j);
         }
-        j = skipBlockComment(j, syntax);
+        j = skipBlockComment(j);
         continue;
       }
       j++;
@@ -459,12 +457,12 @@ export function scan(text: string, syntax: LanguageSyntax = C_SYNTAX): ScanResul
     // whitespace so far" state nor prevent a following `#` from being a
     // directive on the same line.
     if (c === '/' && text[i + 1] === '/') {
-      advanceTo(skipLineComment(i, syntax));
+      advanceTo(skipLineComment(i));
       continue;
     }
 
     if (c === '/' && text[i + 1] === '*') {
-      advanceTo(skipBlockComment(i, syntax));
+      advanceTo(skipBlockComment(i));
       continue;
     }
 
@@ -487,7 +485,7 @@ export function scan(text: string, syntax: LanguageSyntax = C_SYNTAX): ScanResul
     }
 
     if (c === '"' || c === "'") {
-      advanceTo(skipQuoted(i, c, syntax));
+      advanceTo(skipQuoted(i, c));
       continue;
     }
 
@@ -501,12 +499,6 @@ export function scan(text: string, syntax: LanguageSyntax = C_SYNTAX): ScanResul
   }
 
   return { brackets, directives };
-}
-
-function countNewlines(s: string): number {
-  let count = 0;
-  for (let k = 0; k < s.length; k++) if (s.charCodeAt(k) === 10) count++;
-  return count;
 }
 
 function normalizeDirective(raw: string): string {

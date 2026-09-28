@@ -51,7 +51,6 @@ export function rustConditionals(input: RustConditionalInput): ConditionalModel 
       cursorTo: span.endLine,
       segments,
       inactive,
-      isEndif: false,
       kind: 'conditional',
     });
 

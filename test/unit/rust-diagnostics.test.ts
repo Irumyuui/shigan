@@ -27,7 +27,6 @@ const hint = (attrLines: readonly number[], endLine: number): ConditionalHint =>
     target: { line, col: 0 },
   })),
   inactive: false,
-  isEndif: false,
   kind: 'conditional',
 });
 

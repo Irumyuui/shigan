@@ -211,6 +211,21 @@ describe('parseCargoFeatures', () => {
       expect(parseCargoFeatures(manifest)).toBeUndefined();
     });
 
+    it('rejects a [features.foo] sub-table spelling', () => {
+      const manifest = [
+        '[package]',
+        'name = "demo"',
+        '',
+        '[features]',
+        'a = []',
+        '',
+        '[features.foo]',
+        'bar = ["x"]',
+      ].join('\n');
+
+      expect(parseCargoFeatures(manifest)).toBeUndefined();
+    });
+
     it('rejects a non-array default value', () => {
       const manifest = ['[features]', 'default = "std"'].join('\n');
 

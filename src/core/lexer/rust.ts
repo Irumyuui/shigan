@@ -1,3 +1,4 @@
+import { countNewlines, isIdentPart, isIdentStart } from '../ident';
 import { BracketToken, CfgAttributeToken, ScanResult } from '../types';
 
 const BRACKETS = new Set(['(', ')', '[', ']', '{', '}']);
@@ -100,12 +101,12 @@ export function scanRust(text: string): ScanResult {
       return j;
     }
 
-    if (next !== undefined && isIdentStart(next)) {
+    if (isIdentStart(next)) {
       let j = k + 1;
       while (j < n && isIdentPart(text[j])) j++;
       if (text[j] === "'") return j + 1; // char literal, e.g. 'a' / '_'
       // Lifetime; consume an optional raw-lifetime tail: 'r#lt.
-      if (text[j] === '#' && isIdentStart(text[j + 1] ?? '')) {
+      if (text[j] === '#' && isIdentStart(text[j + 1])) {
         j++;
         while (j < n && isIdentPart(text[j])) j++;
       }
@@ -279,20 +280,6 @@ export function scanRust(text: string): ScanResult {
   return { brackets, directives: [], cfgs };
 }
 
-function countNewlines(s: string): number {
-  let count = 0;
-  for (let k = 0; k < s.length; k++) if (s.charCodeAt(k) === 10) count++;
-  return count;
-}
-
 function normalizeWhitespace(s: string): string {
   return s.replace(/\s+/g, ' ').trim();
-}
-
-function isIdentStart(c: string): boolean {
-  return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c === '_';
-}
-
-function isIdentPart(c: string): boolean {
-  return isIdentStart(c) || (c >= '0' && c <= '9');
 }

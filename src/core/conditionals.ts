@@ -1,4 +1,4 @@
-import { HintKind, HintTarget } from './types';
+import { HintTarget } from './types';
 
 /**
  * One clickable segment of a conditional hint.
@@ -35,10 +35,8 @@ export interface ConditionalHint {
   segments: readonly ConditionalSegment[];
   /** Model truth: the referenced branch/block/span is known inactive. */
   inactive: boolean;
-  /** `#endif`-style entries use the block-level rule; `openerLine` must be set for them. */
-  isEndif: boolean;
-  openerLine?: number;
-  kind: HintKind;
+  /** Which producer emitted this hint: a C directive pair or a Rust `#[cfg]` span. */
+  kind: 'macro' | 'conditional';
 }
 
 /** The conditional hints for a document, plus inactive lines when known. */

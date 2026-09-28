@@ -98,8 +98,7 @@ export function parseCompileFlags(
       continue;
     }
 
-    if (raw.startsWith('-')) unknown.push(raw);
-    else unknown.push(raw);
+    unknown.push(raw);
   }
 
   applyStandardMacros(macros, standard, syntax);

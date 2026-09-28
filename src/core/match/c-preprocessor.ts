@@ -170,7 +170,7 @@ export function evaluateConditionals(
       continue;
     }
 
-    if (name === 'if' || name === 'ifdef' || name === 'ifndef') {
+    if (OPENERS.has(name)) {
       const parentActive = currentActive();
       const condition = conditionValue(directive, macros);
       const active = parentActive && (condition.unknown ? true : condition.value === 1);
@@ -186,20 +186,20 @@ export function evaluateConditionals(
     const top = stack[stack.length - 1];
     if (!top) continue;
 
-    if (name === 'elif' || name === 'elifdef' || name === 'elifndef') {
-      const condition = conditionValue(directive, macros);
-      const unknown = top.unknown || condition.unknown;
-      const active = top.parentActive && (unknown ? true : !top.taken && condition.value === 1);
-      top.unknown = unknown;
-      if (!condition.unknown && !top.taken && condition.value === 1) top.taken = true;
-      top.branches.push({ directive, active });
-      continue;
-    }
-
-    if (name === 'else') {
-      const active = top.parentActive && (top.unknown ? true : !top.taken);
-      top.taken = true;
-      top.branches.push({ directive, active });
+    if (BRANCHES.has(name)) {
+      if (name === 'else') {
+        const active = top.parentActive && (top.unknown ? true : !top.taken);
+        top.taken = true;
+        top.branches.push({ directive, active });
+      } else {
+        // `elif` / `elifdef` / `elifndef` share one evaluation.
+        const condition = conditionValue(directive, macros);
+        const unknown = top.unknown || condition.unknown;
+        const active = top.parentActive && (unknown ? true : !top.taken && condition.value === 1);
+        top.unknown = unknown;
+        if (!condition.unknown && !top.taken && condition.value === 1) top.taken = true;
+        top.branches.push({ directive, active });
+      }
       continue;
     }
 
@@ -330,7 +330,6 @@ export function cConditionals(
           ? options.branchActive(previous.line) === false &&
             options.branchActive(current.line) === false
           : false,
-        isEndif: false,
         kind: 'macro',
       });
     }
@@ -361,8 +360,6 @@ export function cConditionals(
         cursorTo: opener.line,
         segments,
         inactive: options.blockActive ? options.blockActive(opener.line) === false : false,
-        isEndif: true,
-        openerLine: opener.line,
         kind: 'macro',
       });
     }
@@ -383,7 +380,6 @@ export function cConditionals(
         },
       ],
       inactive: false,
-      isEndif: false,
       kind: 'macro',
     });
   }
