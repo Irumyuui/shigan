@@ -40,6 +40,17 @@ export function invalidate(): void {
 }
 
 /**
+ * Drops the project-file caches (C# csproj symbols) without touching the
+ * compile_commands cache. Used when a csproj changes on disk.
+ */
+export function invalidateProjectFiles(): void {
+  generation++;
+  macroCache.clear();
+  hintCache.clear();
+  clearCsprojCache();
+}
+
+/**
  * Hints for a document, with the macros, conditional evaluation and caches
  * wired in. Shared by the inlay hint provider, the hover provider and the
  * diagnostic command so they all agree.
