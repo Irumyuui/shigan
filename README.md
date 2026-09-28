@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/Irumyuui/shigan/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Irumyuui/shigan/actions/workflows/ci.yml)
 
-Clickable bracket and preprocessor (`#if` / `#else` / `#endif`) pairing hints for C, C++ and C#.
+Clickable bracket and preprocessor (`#if` / `#else` / `#endif`) pairing hints for C, C++, C# and Rust.
 
 ```
 if (a == 1) {
@@ -61,7 +61,7 @@ they follow `editor.inlayHints.enabled` — there is no colour/opacity setting.
 | Key | Default | Description |
 | --- | --- | --- |
 | `shigan.enable` | `true` | Master switch |
-| `shigan.languages` | `["c","cpp","csharp"]` | Active language ids |
+| `shigan.languages` | `["c","cpp","csharp","rust"]` | Active language ids |
 | `shigan.trigger` | `"cursor"` | `cursor` / `always` / `hover` / `off`, for both kinds |
 | `shigan.show` | `["brackets","macros"]` | Which kinds to hint |
 | `shigan.compileFlags` | `[]` | Compiler-style flags, e.g. `["-DDEBUG=1","-Iinclude","-std=c11"]` |

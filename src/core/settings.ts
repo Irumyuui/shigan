@@ -46,7 +46,7 @@ export interface SettingReader {
 export function readConfigFrom(get: SettingReader): ShiganConfig {
   return {
     enable: get<boolean>('enable', true),
-    languages: get<string[]>('languages', ['c', 'cpp', 'csharp']),
+    languages: get<string[]>('languages', ['c', 'cpp', 'csharp', 'rust']),
     trigger: get<Trigger>('trigger', 'cursor'),
     show: get<PairKind[]>('show', ['brackets', 'macros']),
     compileFlags: get<string[]>('compileFlags', []),

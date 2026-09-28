@@ -12,7 +12,7 @@ describe('readConfigFrom', () => {
   it('uses the documented defaults', () => {
     expect(read()).toEqual({
       enable: true,
-      languages: ['c', 'cpp', 'csharp'],
+      languages: ['c', 'cpp', 'csharp', 'rust'],
       trigger: 'cursor',
       show: ['brackets', 'macros'],
       compileFlags: [],

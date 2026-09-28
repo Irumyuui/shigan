@@ -17,7 +17,7 @@ export interface ComputedHint {
  */
 export const BASELINE: Record<string, unknown> = {
   enable: true,
-  languages: ['c', 'cpp', 'csharp'],
+  languages: ['c', 'cpp', 'csharp', 'rust'],
   trigger: 'always',
   show: ['brackets', 'macros'],
   compileFlags: [],

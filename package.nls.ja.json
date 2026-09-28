@@ -1,10 +1,10 @@
 {
   "extension.displayName": "Shigan",
-  "extension.description": "C・C++・C# 向けの、クリックできる括弧・プリプロセッサ指令（#if/#else/#endif）の対応ヒント。",
+  "extension.description": "C・C++・C#・Rust 向けの、クリックできる括弧・プリプロセッサ指令（#if/#else/#endif）の対応ヒント。",
   "configuration.title": "Shigan",
 
   "shigan.enable.description": "Shigan を有効にします。",
-  "shigan.languages.description": "Shigan を有効にする言語 ID。既定では C・C++・C# です。",
+  "shigan.languages.description": "Shigan を有効にする言語 ID。既定では C・C++・C#・Rust です。",
   "shigan.trigger.markdownDescription": "対応ヒントを表示するタイミング（括弧とマクロの両方に適用）。\n\n- `cursor`：カーソルがある対応のみ表示。括弧はカーソルが括弧の上か隣にある必要があり、指令はその行のどこかにカーソルがあれば表示されます。\n- `always`：複数行にまたがるすべての括弧対応と、すべての指令対応を表示します。`#if` の状態によって隠されることはありません。無効な分岐内の括弧はそもそも対応付けの対象外です（`shigan.preprocessor.skipInactiveBrackets` を参照）。\n- `hover`：ホバー時のツールチップにのみ表示します。\n- `off`：常に表示しません。\n\nヒントの各セグメントはクリックでジャンプできます（`}` -> `{`、`#else`/`#elif` -> 直前の指令、`#endif` の `<-` -> 直前の分岐、`<=` -> 先頭の `#if`）。",
   "shigan.show.description": "表示する対応の種類：'brackets' = ()[]{}、'macros' = #if/#elif/#else/#endif。",
   "shigan.compileFlags.itemDescription": "コンパイラ形式のオプション（例：-DFOO=1、-UBAR、-std=c11、-Iinclude）。",

@@ -29,7 +29,8 @@
   "activationEvents": [
     "onLanguage:c",
     "onLanguage:cpp",
-    "onLanguage:csharp"
+    "onLanguage:csharp",
+    "onLanguage:rust"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -49,7 +50,8 @@
           "default": [
             "c",
             "cpp",
-            "csharp"
+            "csharp",
+            "rust"
           ],
           "description": "%shigan.languages.description%"
         },
