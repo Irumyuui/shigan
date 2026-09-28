@@ -109,6 +109,13 @@ Basic settings:
 - The implicit target-framework symbol table may drift from newer SDKs.
 - Brackets inside C# interpolated-string holes are not matched; the literal is
   treated as opaque.
+- `#region`/`#endregion` are paired under the same `shigan.show` `macros`
+  switch as `#if`/`#else`/`#endif` (there is no separate toggle) and are never
+  flagged `(inactive)`, even inside an `#if 0`.
+- The label on a lone `{` only walks past a wrapped base list / `where` clause
+  when it ends on a type declaration (`class`/`struct`/`interface`/`enum`/
+  `namespace`/`record`/`union`); other wrapped statements keep the plain
+  previous-line label.
 
 ## Development
 

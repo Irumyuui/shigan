@@ -1,0 +1,4 @@
+[
+  { "line": 5, "text": " <- :4-6 #region Inner", "kind": "macro" },
+  { "line": 7, "text": " <- :1-8 #region Outer", "kind": "macro" }
+]

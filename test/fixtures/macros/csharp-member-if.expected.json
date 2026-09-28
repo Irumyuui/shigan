@@ -1,0 +1,4 @@
+[
+  { "line": 8, "text": " <- :5-9 #if DEBUG", "kind": "macro" },
+  { "line": 12, "text": " <- :9-13 #else <= :5-13 #if DEBUG", "kind": "macro" }
+]

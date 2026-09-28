@@ -82,6 +82,9 @@ git tag -d v0.0.1
   `skipInactiveBrackets` (matching), `skipInactiveDirectives` (hiding) and `markInactive` (the `(inactive)` marker).
   The evaluator is conservative: unknown conditions never mark anything inactive.
 - Range text is `:start-end` with a colon on purpose (`#1-3` collided visually with directives).
+- `#region`/`#endregion` pairing lives in `src/core/match/preprocess.ts` (`pairRegions`) and ships under the `macros`
+  switch — no separate setting, and it is never marked inactive. A lone `{` is labelled by a bounded continuation
+  walk in `labelFor` that only returns a wrapped type declaration; other constructs keep the previous-line label.
 
 ## Gotchas
 

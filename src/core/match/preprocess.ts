@@ -60,3 +60,33 @@ export function pairConditionals(directives: DirectiveToken[]): ConditionalPairi
   blocks.sort((a, b) => a.opener.line - b.opener.line);
   return { blocks, byLine };
 }
+
+export interface RegionPair {
+  /** The `#region` that opens the pair. */
+  opener: DirectiveToken;
+  /** The matching `#endregion`. */
+  endregion: DirectiveToken;
+}
+
+/**
+ * Pairs `#region` with `#endregion`, supporting nesting (innermost first).
+ * Unmatched `#endregion` and unclosed `#region` directives produce nothing, so
+ * malformed input simply yields fewer hints rather than a bogus pair.
+ */
+export function pairRegions(directives: DirectiveToken[]): RegionPair[] {
+  const stack: DirectiveToken[] = [];
+  const pairs: RegionPair[] = [];
+
+  for (const directive of directives) {
+    if (directive.name === 'region') {
+      stack.push(directive);
+      continue;
+    }
+    if (directive.name === 'endregion') {
+      const opener = stack.pop();
+      if (opener) pairs.push({ opener, endregion: directive });
+    }
+  }
+
+  return pairs;
+}

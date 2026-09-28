@@ -1,6 +1,6 @@
 import { scan } from './lexer/tokenizer';
 import { BracketMatchResult, BracketPair, matchBrackets } from './match/brackets';
-import { ConditionalPairing, pairConditionals } from './match/preprocess';
+import { ConditionalPairing, pairConditionals, pairRegions } from './match/preprocess';
 import { BracketToken, DirectiveToken, Hint, HintPart, ScanResult, Trigger } from './types';
 
 export interface HintOptions {
@@ -115,6 +115,38 @@ export function computeHints(text: string, options: HintOptions = {}): Hint[] {
         if (markInactive) entry.hint.inactive = true;
       }
       hints.push(entry.hint);
+    }
+
+    // `#region`/`#endregion` live under the same `macros` switch as the
+    // conditionals. They are structural, not conditional, so v1 never flags
+    // them `inactive` (even inside an `#if 0`).
+    for (const region of pairRegions(scanned.directives)) {
+      if (trigger === 'cursor') {
+        const onEndregion = region.endregion.line === cursorLine;
+        const onRegion = region.opener.line === cursorLine;
+        if (!onEndregion && !onRegion) continue;
+      }
+
+      const regionSegment = segment(
+        showRange,
+        showLabel,
+        region.opener.line,
+        region.endregion.line,
+        region.opener,
+        rangeHideThreshold
+      );
+      const part: HintPart = {
+        text: regionSegment ? ` <- ${regionSegment}` : ' <-',
+        target: { line: region.opener.line, col: 0 },
+        title: region.opener.display,
+      };
+      hints.push({
+        line: region.endregion.line,
+        text: part.text,
+        parts: [part],
+        kind: 'macro',
+        target: part.target,
+      });
     }
   }
 
