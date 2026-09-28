@@ -7,6 +7,14 @@ export interface ShiganConfig {
   show: PairKind[];
   compileFlags: string[];
   inheritCompileCommands: boolean;
+  /** Extra C# preprocessor symbols supplied by the user. */
+  csharpDefine: string[];
+  /** Whether to read C# symbols from the nearest project file. */
+  csharpInheritProject: boolean;
+  /** `$(Configuration)` used when evaluating a C# project file. */
+  csharpConfiguration: string;
+  /** Target framework override used to derive implicit C# symbols. */
+  csharpTargetFramework: string;
   trackFileDefines: boolean;
   skipInactiveBrackets: boolean;
   skipInactiveDirectives: boolean;
@@ -34,11 +42,15 @@ export interface SettingReader {
 export function readConfigFrom(get: SettingReader): ShiganConfig {
   return {
     enable: get<boolean>('enable', true),
-    languages: get<string[]>('languages', ['c', 'cpp']),
+    languages: get<string[]>('languages', ['c', 'cpp', 'csharp']),
     trigger: get<Trigger>('trigger', 'cursor'),
     show: get<PairKind[]>('show', ['brackets', 'macros']),
     compileFlags: get<string[]>('compileFlags', []),
     inheritCompileCommands: get<boolean>('inheritCompileCommands', false),
+    csharpDefine: get<string[]>('csharp.define', []),
+    csharpInheritProject: get<boolean>('csharp.inheritProject', true),
+    csharpConfiguration: get<string>('csharp.configuration', 'Debug'),
+    csharpTargetFramework: get<string>('csharp.targetFramework', ''),
     trackFileDefines: get<boolean>('preprocessor.trackFileDefines', true),
     skipInactiveBrackets: get<boolean>('preprocessor.skipInactiveBrackets', true),
     skipInactiveDirectives: get<boolean>('preprocessor.skipInactiveDirectives', false),
