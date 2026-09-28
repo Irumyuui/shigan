@@ -14,10 +14,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - C# conditional symbols come from the nearest `.csproj` / `Directory.Build.props` `DefineConstants` plus the implicit target-framework symbols, controlled by `shigan.csharp.inheritProject`, `shigan.csharp.configuration` and `shigan.csharp.targetFramework`.
 - `shigan.csharp.define` for extra C# preprocessor symbols.
 - C++ and C# golden fixtures, integration coverage and manual samples.
+- `#region` / `#endregion` pairing hints, shown under the same `macros` switch as `#if` (never flagged inactive).
 
 ### Changed
 
 - `shigan.languages` now defaults to `["c","cpp","csharp"]`, with matching `onLanguage:cpp` and `onLanguage:csharp` activation events.
+- A lone `{` after a wrapped type declaration (base list / `where` clause) is now labelled with the declaration line (e.g. `class Foo`) instead of the last continuation line.
+
+### Fixed
+
+- C# project files: commented-out `<DefineConstants>` / `<TargetFramework>` in `.csproj` / `Directory.Build.props` are ignored.
 
 ### Internal
 
