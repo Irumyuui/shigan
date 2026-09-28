@@ -5,7 +5,7 @@ import { parseCompileFlags } from './core/flags';
 import { computeHints } from './core/hints';
 import { LanguageSyntax, syntaxFor } from './core/language';
 import { scan } from './core/lexer/tokenizer';
-import { evaluateConditionals } from './core/match/evaluate';
+import { evaluateConditionals } from './core/match/c-preprocessor';
 import { Hint, MacroDef, Trigger } from './core/types';
 import { clearCsprojCache, findCsprojSymbols } from './csproj-source';
 import { clearCompileCommandCache, findCompileCommandFlags } from './flags-source';

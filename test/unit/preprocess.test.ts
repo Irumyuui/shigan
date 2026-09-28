@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { scan } from '../../src/core/lexer/tokenizer';
-import { pairConditionals } from '../../src/core/match/preprocess';
+import { pairConditionals } from '../../src/core/match/c-preprocessor';
 
 const pair = (text: string) => pairConditionals(scan(text).directives);
 

@@ -1,6 +1,6 @@
 import { syntaxFor } from '../../src/core/language';
 import { scan } from '../../src/core/lexer/tokenizer';
-import { evaluateConditionals } from '../../src/core/match/evaluate';
+import { evaluateConditionals } from '../../src/core/match/c-preprocessor';
 import { MacroDef } from '../../src/core/types';
 
 export interface Predicates {

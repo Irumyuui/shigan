@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { scan } from '../../src/core/lexer/tokenizer';
-import { evaluateConditionals } from '../../src/core/match/evaluate';
+import { evaluateConditionals } from '../../src/core/match/c-preprocessor';
 import { MacroDef } from '../../src/core/types';
 
 function evaluate(text: string, seed: Record<string, string> = {}, trackFileDefines = true) {

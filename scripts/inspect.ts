@@ -8,7 +8,7 @@ import { extname, join } from 'node:path';
 import { computeHints } from '../src/core/hints';
 import { syntaxFor } from '../src/core/language';
 import { scan } from '../src/core/lexer/tokenizer';
-import { evaluateConditionals } from '../src/core/match/evaluate';
+import { evaluateConditionals } from '../src/core/match/c-preprocessor';
 import { MacroDef } from '../src/core/types';
 
 const file = process.argv[2] ?? join(process.cwd(), 'test', 'manual', 'sample.c');

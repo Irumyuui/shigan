@@ -1,7 +1,9 @@
+import { ConditionalModel, cursorActivates } from './conditionals';
+import { segment, shouldShowRange, textOfParts } from './hint-parts';
 import { scan } from './lexer/tokenizer';
 import { BracketMatchResult, BracketPair, matchBrackets } from './match/brackets';
-import { ConditionalPairing, pairConditionals, pairRegions } from './match/preprocess';
-import { BracketToken, DirectiveToken, Hint, HintPart, ScanResult, Trigger } from './types';
+import { cConditionals } from './match/c-preprocessor';
+import { BracketToken, Hint, HintPart, ScanResult, Trigger } from './types';
 
 export interface HintOptions {
   /** Show bracket hints (default true). */
@@ -35,6 +37,12 @@ export interface HintOptions {
   markInactive?: boolean;
   /** Pre-computed scan result, to avoid scanning the same text twice. */
   scanned?: ScanResult;
+  /**
+   * Pre-computed conditional model. When omitted the renderer builds one from
+   * `scanned.directives` using the legacy `branchActive`/`blockActive`
+   * callbacks; when provided, those callbacks are ignored for macros.
+   */
+  conditionals?: ConditionalModel;
 }
 
 /**
@@ -91,62 +99,46 @@ export function computeHints(text: string, options: HintOptions = {}): Hint[] {
   }
 
   if (options.macros !== false) {
-    const pairing = pairConditionals(scanned.directives);
-    const entries = buildMacroHints(pairing, showRange, showLabel, rangeHideThreshold);
+    const model =
+      options.conditionals ??
+      cConditionals(scanned.directives, {
+        branchActive: options.branchActive,
+        blockActive: options.blockActive,
+      });
     const cursorLine =
       trigger === 'cursor' ? lineAtOffset(text, options.cursorOffset ?? -1) : -1;
 
-    for (const entry of entries) {
-      if (trigger === 'cursor') {
-        const onDirective = entry.directiveLine === cursorLine;
-        const onOpener = entry.isEndif && entry.openerLine === cursorLine;
-        if (!onDirective && !onOpener) continue;
-      }
+    for (const entry of model.hints) {
+      if (trigger === 'cursor' && !cursorActivates(entry, cursorLine)) continue;
 
       // `always` means always for directives: the hint is shown even when the
       // branch it refers to is disabled (it is flagged `inactive` instead).
       // `skipInactiveDirectives` is the counterpart of `skipInactiveBrackets`.
-      const isInactiveInBranch = entry.isEndif
-        ? options.blockActive?.(entry.referenceLine) === false
-        : branchHintIsInactive(options.branchActive, entry.referenceLine, entry.directiveLine);
+      if (entry.inactive && options.skipInactiveDirectives === true) continue;
 
-      if (isInactiveInBranch) {
-        if (options.skipInactiveDirectives === true) continue;
-        if (markInactive) entry.hint.inactive = true;
-      }
-      hints.push(entry.hint);
-    }
-
-    // `#region`/`#endregion` live under the same `macros` switch as the
-    // conditionals. They are structural, not conditional, so v1 never flags
-    // them `inactive` (even inside an `#if 0`).
-    for (const region of pairRegions(scanned.directives)) {
-      if (trigger === 'cursor') {
-        const onEndregion = region.endregion.line === cursorLine;
-        const onRegion = region.opener.line === cursorLine;
-        if (!onEndregion && !onRegion) continue;
-      }
-
-      const regionSegment = segment(
-        showRange,
-        showLabel,
-        region.opener.line,
-        region.endregion.line,
-        region.opener,
-        rangeHideThreshold
-      );
-      const part: HintPart = {
-        text: regionSegment ? ` <- ${regionSegment}` : ' <-',
-        target: { line: region.opener.line, col: 0 },
-        title: region.opener.display,
-      };
-      hints.push({
-        line: region.endregion.line,
-        text: part.text,
-        parts: [part],
-        kind: 'macro',
-        target: part.target,
+      const parts: HintPart[] = entry.segments.map((seg) => {
+        const body = segment(
+          showRange,
+          showLabel,
+          seg.fromLine,
+          seg.toLine,
+          seg.display,
+          rangeHideThreshold
+        );
+        // An empty body renders as the bare marker, without a trailing space.
+        const text = body ? `${seg.marker}${body}` : seg.marker.trimEnd();
+        return { text, target: seg.target, title: seg.display };
       });
+
+      const hint: Hint = {
+        line: entry.line,
+        text: textOfParts(parts),
+        parts,
+        kind: entry.kind,
+        target: parts[0]?.target,
+      };
+      if (entry.inactive && markInactive) hint.inactive = true;
+      hints.push(hint);
     }
   }
 
@@ -181,148 +173,6 @@ function bracketHint(
     target,
     parts: [{ text, target, title }],
   };
-}
-
-interface MacroHintEntry {
-  hint: Hint;
-  /** Directive line this hint is attached to. */
-  directiveLine: number;
-  /** Set for `#endif` hints. */
-  isEndif: boolean;
-  /** Opening directive line of the conditional block. */
-  openerLine: number;
-  /** The directive line the hint references (the preceding branch, or the opener for `#endif`). */
-  referenceLine: number;
-}
-
-function buildMacroHints(
-  pairing: ConditionalPairing,
-  showRange: boolean,
-  showLabel: boolean,
-  rangeHideThreshold: number
-): MacroHintEntry[] {
-  const entries: MacroHintEntry[] = [];
-
-  for (const block of pairing.blocks) {
-    const opener = block.opener;
-
-    for (let k = 1; k < block.branches.length; k++) {
-      const previous = block.branches[k - 1];
-      const current = block.branches[k];
-      const parts = macroParts(showRange, showLabel, previous, current, undefined, rangeHideThreshold);
-      entries.push({
-        hint: {
-          line: current.line,
-          text: textOfParts(parts),
-          parts,
-          kind: 'macro',
-          target: parts[0]?.target,
-        },
-        directiveLine: current.line,
-        isEndif: false,
-        openerLine: opener.line,
-        referenceLine: previous.line,
-      });
-    }
-
-    if (block.endif) {
-      const previous = block.branches[block.branches.length - 1];
-      const hasMultipleBranches = block.branches.length > 1;
-      const parts = macroParts(
-        showRange,
-        showLabel,
-        previous,
-        block.endif,
-        hasMultipleBranches ? opener : undefined,
-        rangeHideThreshold
-      );
-      entries.push({
-        hint: {
-          line: block.endif.line,
-          text: textOfParts(parts),
-          parts,
-          kind: 'macro',
-          target: parts[0]?.target,
-        },
-        directiveLine: block.endif.line,
-        isEndif: true,
-        openerLine: opener.line,
-        referenceLine: opener.line,
-      });
-    }
-  }
-
-  return entries;
-}
-
-/**
- * Builds the clickable segments of a directive hint.
- *
- * - the `<-` segment references the preceding branch and jumps to it;
- * - the `<=` segment (only on an `#endif` with more than one branch)
- *   references the whole block and jumps to its opening `#if`.
- */
-function macroParts(
-  showRange: boolean,
-  showLabel: boolean,
-  previous: DirectiveToken,
-  current: DirectiveToken,
-  outer: DirectiveToken | undefined,
-  rangeHideThreshold: number
-): HintPart[] {
-  const parts: HintPart[] = [];
-
-  const previousSegment = segment(
-    showRange,
-    showLabel,
-    previous.line,
-    current.line,
-    previous,
-    rangeHideThreshold
-  );
-  parts.push({
-    text: previousSegment ? ` <- ${previousSegment}` : ' <-',
-    target: { line: previous.line, col: 0 },
-    title: previous.display,
-  });
-
-  if (outer) {
-    const outerSegment = segment(
-      showRange,
-      showLabel,
-      outer.line,
-      current.line,
-      outer,
-      rangeHideThreshold
-    );
-    parts.push({
-      text: outerSegment ? ` <= ${outerSegment}` : ' <=',
-      target: { line: outer.line, col: 0 },
-      title: outer.display,
-    });
-  }
-
-  return parts;
-}
-
-function textOfParts(parts: HintPart[]): string {
-  return parts.map((part) => part.text).join('');
-}
-
-function segment(
-  showRange: boolean,
-  showLabel: boolean,
-  fromLine: number,
-  toLine: number,
-  directive: DirectiveToken,
-  rangeHideThreshold: number
-): string {
-  const bits: string[] = [];
-  if (shouldShowRange(showRange, rangeHideThreshold, fromLine, toLine)) {
-    bits.push(`:${fromLine + 1}-${toLine + 1}`);
-  }
-  if (showLabel) bits.push(directive.display);
-  return bits.join(' ');
 }
 
 /** A line that continues the previous one (base list, `where`, chain). */
@@ -396,27 +246,6 @@ function lineAtOffset(text: string, offset: number): number {
 
 function splitLines(text: string): string[] {
   return text.split(/\r?\n/);
-}
-
-/** `0` disables the threshold, so the range is always shown. */
-function shouldShowRange(
-  showRange: boolean,
-  rangeHideThreshold: number,
-  fromLine: number,
-  toLine: number
-): boolean {
-  if (!showRange) return false;
-  if (rangeHideThreshold > 0 && toLine - fromLine <= rangeHideThreshold) return false;
-  return true;
-}
-
-function branchHintIsInactive(
-  branchActive: ((line: number) => boolean | undefined) | undefined,
-  previousLine: number,
-  currentLine: number
-): boolean {
-  if (!branchActive) return false;
-  return branchActive(previousLine) === false && branchActive(currentLine) === false;
 }
 
 function compareText(a: string, b: string): number {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { computeHints } from '../../src/core/hints';
 import { scan } from '../../src/core/lexer/tokenizer';
-import { pairRegions } from '../../src/core/match/preprocess';
+import { pairRegions } from '../../src/core/match/c-preprocessor';
 import { predicates } from './support';
 
 const SIMPLE = '#region Name\nint a;\n#endregion\n';

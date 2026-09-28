@@ -1,7 +1,99 @@
+import { ConditionalHint, ConditionalModel, ConditionalSegment } from '../conditionals';
 import { C_SYNTAX, LanguageSyntax } from '../language';
 import { DirectiveToken, MacroDef } from '../types';
 import { parseDefine, parseUndef } from '../flags';
 import { evaluateExpression } from './expression';
+
+const OPENERS = new Set(['if', 'ifdef', 'ifndef']);
+const BRANCHES = new Set(['elif', 'elifdef', 'elifndef', 'else']);
+
+export interface ConditionalBlock {
+  /** The `#if` / `#ifdef` / `#ifndef` that opens the block. */
+  opener: DirectiveToken;
+  /** All branches, the opener being the first one. */
+  branches: DirectiveToken[];
+  /** The `#endif`, when present (malformed input may omit it). */
+  endif?: DirectiveToken;
+  closed: boolean;
+}
+
+export interface ConditionalPairing {
+  blocks: ConditionalBlock[];
+  /** Maps any directive line of a block (branch or `#endif`) to that block. */
+  byLine: Map<number, ConditionalBlock>;
+}
+
+/**
+ * Pairs `#if`/`#ifdef`/`#ifndef` with their `#elif`/`#elifdef`/`#elifndef`/
+ * `#else` branches and `#endif`. Purely structural: conditions are not
+ * evaluated here (that is the job of the conditional evaluator).
+ */
+export function pairConditionals(directives: DirectiveToken[]): ConditionalPairing {
+  const stack: ConditionalBlock[] = [];
+  const blocks: ConditionalBlock[] = [];
+  const byLine = new Map<number, ConditionalBlock>();
+
+  for (const directive of directives) {
+    if (OPENERS.has(directive.name)) {
+      stack.push({ opener: directive, branches: [directive], closed: false });
+      continue;
+    }
+
+    const top = stack[stack.length - 1];
+    if (BRANCHES.has(directive.name)) {
+      if (top) top.branches.push(directive);
+      continue;
+    }
+
+    if (directive.name === 'endif' && top) {
+      stack.pop();
+      top.endif = directive;
+      top.closed = true;
+      blocks.push(top);
+    }
+  }
+
+  // Unclosed blocks are reported too, so hints degrade gracefully.
+  for (const block of stack) blocks.push(block);
+
+  for (const block of blocks) {
+    for (const branch of block.branches) byLine.set(branch.line, block);
+    if (block.endif) byLine.set(block.endif.line, block);
+  }
+
+  blocks.sort((a, b) => a.opener.line - b.opener.line);
+  return { blocks, byLine };
+}
+
+export interface RegionPair {
+  /** The `#region` that opens the pair. */
+  opener: DirectiveToken;
+  /** The matching `#endregion`. */
+  endregion: DirectiveToken;
+}
+
+/**
+ * Pairs `#region` with `#endregion`, supporting nesting (innermost first).
+ * Unmatched `#endregion` and unclosed `#region` directives produce nothing, so
+ * malformed input simply yields fewer hints rather than a bogus pair.
+ */
+export function pairRegions(directives: DirectiveToken[]): RegionPair[] {
+  const stack: DirectiveToken[] = [];
+  const pairs: RegionPair[] = [];
+
+  for (const directive of directives) {
+    if (directive.name === 'region') {
+      stack.push(directive);
+      continue;
+    }
+    if (directive.name === 'endregion') {
+      const opener = stack.pop();
+      if (opener) pairs.push({ opener, endregion: directive });
+    }
+  }
+
+  return pairs;
+}
 
 export interface EvaluationOptions {
   macros: Map<string, MacroDef>;
@@ -192,4 +284,109 @@ function applyDefine(
 function applyUndef(macros: Map<string, MacroDef>, directive: DirectiveToken): void {
   const name = parseUndef(directive.display);
   if (name) macros.delete(name);
+}
+
+export interface CPreprocessorOptions {
+  /** Activity lookups; same shape the renderer's legacy callbacks used. */
+  branchActive?: (line: number) => boolean | undefined;
+  blockActive?: (openerLine: number) => boolean | undefined;
+}
+
+/**
+ * Builds the conditional hint model (directives + regions) for a document.
+ *
+ * Directive entries come first, then regions — matching the renderer's push
+ * order; `computeHints` applies the final sort. Activity is only known when the
+ * caller supplies the lookups (an evaluator's maps), otherwise nothing is
+ * marked inactive.
+ */
+export function cConditionals(
+  directives: DirectiveToken[],
+  options: CPreprocessorOptions = {}
+): ConditionalModel {
+  const hints: ConditionalHint[] = [];
+  const pairing = pairConditionals(directives);
+
+  for (const block of pairing.blocks) {
+    const opener = block.opener;
+
+    for (let k = 1; k < block.branches.length; k++) {
+      const previous = block.branches[k - 1];
+      const current = block.branches[k];
+      hints.push({
+        line: current.line,
+        cursorFrom: current.line,
+        cursorTo: current.line,
+        segments: [
+          {
+            marker: ' <- ',
+            fromLine: previous.line,
+            toLine: current.line,
+            display: previous.display,
+            target: { line: previous.line, col: 0 },
+          },
+        ],
+        inactive: options.branchActive
+          ? options.branchActive(previous.line) === false &&
+            options.branchActive(current.line) === false
+          : false,
+        isEndif: false,
+        kind: 'macro',
+      });
+    }
+
+    if (block.endif) {
+      const previous = block.branches[block.branches.length - 1];
+      const segments: ConditionalSegment[] = [
+        {
+          marker: ' <- ',
+          fromLine: previous.line,
+          toLine: block.endif.line,
+          display: previous.display,
+          target: { line: previous.line, col: 0 },
+        },
+      ];
+      if (block.branches.length > 1) {
+        segments.push({
+          marker: ' <= ',
+          fromLine: opener.line,
+          toLine: block.endif.line,
+          display: opener.display,
+          target: { line: opener.line, col: 0 },
+        });
+      }
+      hints.push({
+        line: block.endif.line,
+        cursorFrom: block.endif.line,
+        cursorTo: opener.line,
+        segments,
+        inactive: options.blockActive ? options.blockActive(opener.line) === false : false,
+        isEndif: true,
+        openerLine: opener.line,
+        kind: 'macro',
+      });
+    }
+  }
+
+  for (const region of pairRegions(directives)) {
+    hints.push({
+      line: region.endregion.line,
+      cursorFrom: region.endregion.line,
+      cursorTo: region.opener.line,
+      segments: [
+        {
+          marker: ' <- ',
+          fromLine: region.opener.line,
+          toLine: region.endregion.line,
+          display: region.opener.display,
+          target: { line: region.opener.line, col: 0 },
+        },
+      ],
+      inactive: false,
+      isEndif: false,
+      kind: 'macro',
+    });
+  }
+
+  return { hints };
 }
