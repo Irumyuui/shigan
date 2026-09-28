@@ -1,3 +1,4 @@
+import { C_SYNTAX, LanguageSyntax } from './language';
 import { MacroDef } from './types';
 
 export interface ParsedFlags {
@@ -22,14 +23,37 @@ const STANDARD_VERSIONS: Record<string, number> = {
   gnu23: 202311,
 };
 
+/** `__cplusplus` values for the C++ standards clang/gcc accept via `-std`. */
+const CPP_STANDARD_VERSIONS: Record<string, number> = {
+  'c++98': 199711,
+  'c++03': 199711,
+  'c++11': 201103,
+  'c++14': 201402,
+  'c++17': 201703,
+  'c++20': 202002,
+  'c++23': 202302,
+  'gnu++98': 199711,
+  'gnu++03': 199711,
+  'gnu++11': 201103,
+  'gnu++14': 201402,
+  'gnu++17': 201703,
+  'gnu++20': 202002,
+  'gnu++23': 202302,
+};
+
 /**
  * Parses compiler-style flags (`-DFOO=1`, `-UBAR`, `-std=c11`, `-Iinclude`)
  * into the pieces the lexical tier understands. Unknown flags are collected
  * but ignored.
+ *
+ * `syntax` picks the standard macro dialect: C injects `__STDC__` (and
+ * `__STDC_VERSION__` from `-std=cNN`); C++ injects `__cplusplus` from
+ * `-std=c++NN`/`gnu++NN` instead.
  */
 export function parseCompileFlags(
   flags: string[],
-  resolve?: (variable: string) => string | undefined
+  resolve?: (variable: string) => string | undefined,
+  syntax: LanguageSyntax = C_SYNTAX
 ): ParsedFlags {
   const macros = new Map<string, MacroDef>();
   const includePaths: string[] = [];
@@ -78,7 +102,7 @@ export function parseCompileFlags(
     else unknown.push(raw);
   }
 
-  applyStandardMacros(macros, standard);
+  applyStandardMacros(macros, standard, syntax);
   return { macros, includePaths, standard, unknown };
 }
 
@@ -127,7 +151,19 @@ export function parseUndef(display: string): string | undefined {
   return match?.[1];
 }
 
-function applyStandardMacros(macros: Map<string, MacroDef>, standard: string | undefined): void {
+function applyStandardMacros(
+  macros: Map<string, MacroDef>,
+  standard: string | undefined,
+  syntax: LanguageSyntax
+): void {
+  if (syntax.id === 'cpp') {
+    // C++ defines `__cplusplus` (from -std) and neither of the C macros.
+    const cppVersion = standard ? CPP_STANDARD_VERSIONS[standard] : undefined;
+    if (cppVersion !== undefined && !macros.has('__cplusplus')) {
+      macros.set('__cplusplus', { value: String(cppVersion), functionLike: false });
+    }
+    return;
+  }
   if (!macros.has('__STDC__')) {
     macros.set('__STDC__', { value: '1', functionLike: false });
   }

@@ -18,9 +18,9 @@ const BRACKETS = new Set(['(', ')', '[', ']', '{', '}']);
  * string. Directive lines are treated as opaque: brackets inside them are not
  * reported (macro bodies are a documented limitation).
  *
- * `syntax` selects the lexical profile. Only C exists today, so every profile
- * currently scans exactly like C; the parameter is the seam the per-language
- * helpers below will grow into.
+ * `syntax` selects the lexical profile. The only difference today is raw
+ * string literals: recognized when `syntax.rawStrings` is true (C++), skipped
+ * like a C string otherwise, so C output is byte-identical.
  */
 export function scan(text: string, syntax: LanguageSyntax = C_SYNTAX): ScanResult {
   const brackets: BracketToken[] = [];
@@ -84,7 +84,7 @@ export function scan(text: string, syntax: LanguageSyntax = C_SYNTAX): ScanResul
    * backslash-newline splices, and stops at an unescaped newline.
    */
   const skipQuoted = (k: number, quote: string, syntax: LanguageSyntax): number => {
-    void syntax; // rawStrings/csharpLiterals are inert until implemented.
+    void syntax; // csharpLiterals is inert until implemented.
     let j = k + 1;
     while (j < n) {
       const ch = text[j];
@@ -98,6 +98,26 @@ export function scan(text: string, syntax: LanguageSyntax = C_SYNTAX): ScanResul
       if (ch === quote) break;
     }
     return j;
+  };
+
+  /**
+   * End index (exclusive) of a C++ raw string literal starting at `k`, or -1
+   * when `k` does not start one. The opening is
+   * `[u8|u|U|L]R"delim(` where `delim` is 0-16 characters that must not
+   * contain whitespace, `(`, `)`, `\` or control characters; the body runs to
+   * `)delim"` and may span multiple lines with quotes and brackets inside.
+   * An unterminated literal consumes the rest of the document.
+   */
+  const skipRawString = (k: number): number => {
+    let p = k;
+    const prefix = /^(?:u8|[uUL])/.exec(text.slice(p, p + 2));
+    if (prefix) p += prefix[0].length;
+    if (text[p] !== 'R' || text[p + 1] !== '"') return -1;
+    const open = /^([^()\\\s\u0000-\u001f\u007f]{0,16})\(/.exec(text.slice(p + 2, p + 19));
+    if (!open) return -1;
+    const delim = open[1];
+    const close = text.indexOf(')' + delim + '"', p + 2 + delim.length + 1);
+    return close < 0 ? n : close + delim.length + 2;
   };
 
   while (i < n) {
@@ -163,6 +183,14 @@ export function scan(text: string, syntax: LanguageSyntax = C_SYNTAX): ScanResul
     if (c === '/' && text[i + 1] === '*') {
       advanceTo(skipBlockComment(i, syntax));
       continue;
+    }
+
+    if (syntax.rawStrings) {
+      const rawEnd = skipRawString(i);
+      if (rawEnd >= 0) {
+        advanceTo(rawEnd);
+        continue;
+      }
     }
 
     if (c === '"' || c === "'") {

@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { createVariableResolver, ShiganConfig } from './config';
 import { parseCompileFlags } from './core/flags';
 import { computeHints } from './core/hints';
-import { syntaxFor } from './core/language';
+import { LanguageSyntax, syntaxFor } from './core/language';
 import { scan } from './core/lexer/tokenizer';
 import { evaluateConditionals } from './core/match/evaluate';
 import { Hint, MacroDef, Trigger } from './core/types';
@@ -58,7 +58,7 @@ export function computeDocumentHints(
   const text = document.getText();
   const syntax = syntaxFor(document.languageId);
   const scanned = scan(text, syntax);
-  const macros = documentMacros(document, config);
+  const macros = documentMacros(document, config, syntax);
   const evaluation = evaluateConditionals(scanned.directives, {
     macros,
     trackFileDefines: config.trackFileDefines,
@@ -87,7 +87,8 @@ export function computeDocumentHints(
 
 function documentMacros(
   document: vscode.TextDocument,
-  config: ShiganConfig
+  config: ShiganConfig,
+  syntax: LanguageSyntax
 ): Map<string, MacroDef> {
   const key = document.uri.toString();
   const cached = macroCache.get(key);
@@ -101,7 +102,11 @@ function documentMacros(
       ? findCompileCommandFlags(document.uri.fsPath) ?? []
       : [];
 
-  const macros = parseCompileFlags([...fileFlags, ...config.compileFlags], resolver).macros;
+  const macros = parseCompileFlags(
+    [...fileFlags, ...config.compileFlags],
+    resolver,
+    syntax
+  ).macros;
   macroCache.set(key, { version: document.version, generation, macros });
   return macros;
 }
