@@ -10,6 +10,7 @@ import { evaluateConditionals } from './core/match/c-preprocessor';
 import { hostCfg, parseRustCfgEntries, RustCfgEnvironment } from './core/match/rust/cfg';
 import { explicitDecidedSpans, rustConditionals } from './core/match/rust/conditionals';
 import { applyMergedInactivity, mergeRustInactiveLines } from './core/match/rust/diagnostics';
+import { pairCfgItems } from './core/match/rust/items';
 import { Hint, MacroDef, Trigger } from './core/types';
 import { clearCargoCache, findCargoFeatures, hasAncestorManifest } from './cargo-source';
 import { clearCsprojCache, findCsprojSymbols } from './csproj-source';
@@ -126,17 +127,23 @@ export function computeDocumentHints(
     const scanned = scanRust(text);
     const lines = text.split(/\r?\n/);
     const environment = rustEnvironment(document, config);
-    const model = rustConditionals({ scanned, lines, environment });
+    // Pair the cfg items once and share the result: both the lexical model and
+    // the explicit-decided spans would otherwise scan the same document twice.
+    const spans = pairCfgItems(scanned, lines);
+    const model = rustConditionals({ scanned, lines, environment, spans });
 
     // rust-analyzer's diagnostics are authoritative when present (or when the
     // extension is active); explicit `shigan.rust.cfg`-decided spans still win.
+    // With no explicit entries nothing can be explicitly decided, so skip it.
     const explicitAttributeLines = new Set<number>();
     const explicitInactiveLines = new Set<number>();
-    for (const span of explicitDecidedSpans({ scanned, lines, environment })) {
-      for (const line of span.attrLines) explicitAttributeLines.add(line);
-      if (span.inactive) {
-        for (let line = span.attrLine; line <= span.endLine; line++) {
-          explicitInactiveLines.add(line);
+    if (environment.explicit && environment.explicit.size > 0) {
+      for (const span of explicitDecidedSpans({ scanned, lines, environment, spans })) {
+        for (const line of span.attrLines) explicitAttributeLines.add(line);
+        if (span.inactive) {
+          for (let line = span.attrLine; line <= span.endLine; line++) {
+            explicitInactiveLines.add(line);
+          }
         }
       }
     }

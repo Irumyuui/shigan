@@ -34,29 +34,39 @@ const ITEM_HEAD =
  * matching `}`) are found within 300 lines — so semicolon-terminated items
  * (`use`, `type`, `static`, `const`, unit/tuple structs, `mod m;`) produce no
  * span by design. Never throws.
+ *
+ * Performance: a single line-indexed pass over the brackets (see
+ * {@link BracketIndex}) replaces the former per-attribute rescan of the whole
+ * file, so this is linear in the document size rather than O(cfgs × brackets).
  */
 export function pairCfgItems(scanned: ScanResult, lines: readonly string[]): CfgItemSpan[] {
-  const cfgs = (scanned.cfgs ?? []).filter(
+  const all = scanned.cfgs ?? [];
+  if (all.length === 0) return [];
+
+  const brackets = scanned.brackets;
+  const index = buildBracketIndex(brackets, lines);
+
+  const cfgs = all.filter(
     (attr) =>
       attr.name === 'cfg' &&
       !attr.inner &&
       isFirstOnLine(attr, lines) &&
-      !isInMacroBody(scanned.brackets, attr.offset, lines)
+      index.macroCountBefore[lowerBound(brackets, attr.offset)] === 0
   );
   if (cfgs.length === 0) return [];
 
   const cfgByPos = new Map<string, CfgAttributeToken>();
-  for (const attr of scanned.cfgs ?? []) {
+  for (const attr of all) {
     if (attr.name === 'cfg' && !attr.inner) cfgByPos.set(`${attr.line}:${attr.col}`, attr);
   }
 
-  const pairs = matchBrackets(scanned.brackets);
+  const pairs = matchBrackets(brackets);
   const consumed = new Set<number>();
   const spans: CfgItemSpan[] = [];
 
   for (const attr of cfgs) {
     if (consumed.has(attr.line)) continue;
-    const span = pairOne(attr, cfgByPos, consumed, scanned.brackets, pairs.byOpenOffset, lines);
+    const span = pairOne(attr, cfgByPos, consumed, brackets, index, pairs.byOpenOffset, lines);
     if (span) spans.push(span);
   }
 
@@ -69,18 +79,20 @@ function pairOne(
   cfgByPos: Map<string, CfgAttributeToken>,
   consumed: Set<number>,
   brackets: readonly BracketToken[],
+  index: BracketIndex,
   byOpenOffset: Map<number, { open: BracketToken; close: BracketToken }>,
   lines: readonly string[]
 ): CfgItemSpan | undefined {
-  const limit = first.line + MAX_LOOKAHEAD;
+  const limit = Math.min(first.line + MAX_LOOKAHEAD, lines.length - 1);
   const merged: CfgAttributeToken[] = [];
   let line = first.line;
   let col = first.col;
   let itemLine = -1;
+  let itemCol = 0;
   let itemHead = '';
 
-  // Walk the attribute group one attribute at a time, looking at each
-  // attribute's own tail (which may hold another attribute OR the item head).
+  // Walk the attribute group one attribute at a time; each attribute's tail can
+  // hold another attribute OR the item head (comment-aware).
   for (;;) {
     const attribute = cfgByPos.get(`${line}:${col}`);
     if (attribute) merged.push(attribute);
@@ -88,39 +100,19 @@ function pairOne(
     const close = findAttributeClose(lines, line, col);
     if (!close) return undefined;
 
-    const tail = (lines[close.line] ?? '').slice(close.col);
-    if (isBlankOrComment(tail)) {
-      // Nothing usable on this line: take the next non-blank/non-comment line.
-      let next = close.line + 1;
-      while (next <= limit && isBlankOrComment(lines[next] ?? '')) next++;
-      if (next > limit) return undefined;
+    const code = scanAfterAttribute(lines, close.line, close.col, limit);
+    if (!code) return undefined;
 
-      const text = lines[next] ?? '';
-      const hash = attributeStartColumn(text);
-      if (hash >= 0) {
-        if (next < line || (next === line && hash <= col)) return undefined;
-        line = next;
-        col = hash;
-        continue;
-      }
-
-      itemLine = next;
-      itemHead = text.trim();
-      break;
-    }
-
-    // A tail that starts another attribute is skipped/merged and re-examined.
-    const hash = tail.indexOf('#');
-    if (hash >= 0 && isAttributeStart(tail.trim())) {
-      const nextCol = close.col + hash;
-      if (nextCol <= col) return undefined;
-      line = close.line;
-      col = nextCol;
+    if (isAttributeStart(code.text)) {
+      if (code.line < line || (code.line === line && code.col <= col)) return undefined;
+      line = code.line;
+      col = code.col;
       continue;
     }
 
-    itemLine = close.line;
-    itemHead = tail.trim();
+    itemLine = code.line;
+    itemCol = code.col;
+    itemHead = code.text.trim();
     break;
   }
 
@@ -131,38 +123,43 @@ function pairOne(
 
   if (!ITEM_HEAD.test(itemHead)) return undefined;
 
-  const depth = braceDepthBefore(brackets, first.offset);
+  const depth = index.braceDepthBefore[lowerBound(brackets, first.offset)];
+  const candidates = index.opensByDepth.get(depth);
+  if (!candidates) return undefined;
 
-  // First `{` at the item's own depth, on/after the item line and in the window.
-  let open: BracketToken | undefined;
-  let currentDepth = 0;
-  for (const token of brackets) {
-    if (token.char === '{') {
-      if (currentDepth === depth && token.line >= itemLine && token.line <= limit) {
-        open = token;
-        break;
-      }
-      currentDepth++;
-    } else if (token.char === '}') {
-      currentDepth--;
-    }
+  // First `{` at the item's own depth on/after the item line, within the window.
+  let low = 0;
+  let high = candidates.length;
+  while (low < high) {
+    const mid = (low + high) >> 1;
+    if (brackets[candidates[mid]].line < itemLine) low = mid + 1;
+    else high = mid;
   }
-  if (!open) return undefined;
 
-  // A top-level `;` before the opening brace ends a semicolon-terminated item
-  // (`use a::b;`, `const X: i32 = 1;`). The guard is depth-aware so a `;` inside
-  // `(...)`/`[...]` (e.g. `[u8; 4]`, `[u8; N]`) does not disqualify the item.
-  if (hasTopLevelSemicolon(lines, itemLine, open)) return undefined;
+  for (let k = low; k < candidates.length; k++) {
+    const open = brackets[candidates[k]];
+    if (open.line > limit) break;
 
-  const pair = byOpenOffset.get(open.offset);
-  if (!pair || pair.close.line > limit) return undefined;
+    // A `{` inside an unclosed generic argument list (`Bar<{ N }>`) is not the
+    // item body; keep looking (the semicolon guard then rejects the item).
+    if (unclosedAngleDepth(lines, itemLine, itemCol, open) > 0) continue;
 
-  return {
-    attrLine: first.line,
-    attrLines: merged.map((attribute) => attribute.line),
-    displays: merged.map((attribute) => attribute.display),
-    endLine: pair.close.line,
-  };
+    // A top-level `;` before the opening brace ends a semicolon-terminated item
+    // (`use a::b;`, `const X: i32 = 1;`; the depth guard keeps `[u8; N]`).
+    if (hasTopLevelSemicolon(lines, itemLine, open)) return undefined;
+
+    const pair = byOpenOffset.get(open.offset);
+    if (!pair || pair.close.line > limit) return undefined;
+
+    return {
+      attrLine: first.line,
+      attrLines: merged.map((attribute) => attribute.line),
+      displays: merged.map((attribute) => attribute.display),
+      endLine: pair.close.line,
+    };
+  }
+
+  return undefined;
 }
 
 /**
@@ -207,6 +204,7 @@ function findAttributeClose(
   let col = startCol;
   let depth = 0;
   let opened = false;
+  let jumped = false;
 
   while (line < lines.length) {
     const text = lines[line] ?? '';
@@ -220,6 +218,16 @@ function findAttributeClose(
         }
         if (col < text.length) col++; // step past the closing quote
         continue;
+      }
+      if (ch === '/' && text[col + 1] === '*') {
+        // A bracket inside a block comment must not close the attribute early
+        // (`#[cfg(/* [ */ unix)]`), so hop over the whole comment.
+        const end = skipBlockComment(lines, line, col, lines.length - 1);
+        if (!end) return undefined;
+        line = end.line;
+        col = end.col;
+        jumped = true;
+        break;
       }
       if (ch === '[') {
         depth++;
@@ -235,11 +243,163 @@ function findAttributeClose(
       }
       col++;
     }
+    if (jumped) {
+      jumped = false;
+      continue;
+    }
     line++;
     col = 0;
   }
 
   return undefined;
+}
+
+/**
+ * The next code position after `(line, col)`, skipping whitespace, line
+ * comments and (possibly multi-line, nested) block comments. Returns the line,
+ * column of the first code character and the untrimmed rest of that line from
+ * `col`; undefined when only comments/blanks remain within `limit`.
+ *
+ * This is what keeps a multi-line block comment between a `#[cfg]` and its item
+ * from being mistaken for the item head — without a `*`-prefix heuristic (a
+ * genuine `*p += 1;` line stays code).
+ */
+function scanAfterAttribute(
+  lines: readonly string[],
+  line: number,
+  col: number,
+  limit: number
+): { line: number; col: number; text: string } | undefined {
+  while (line <= limit) {
+    const source = lines[line] ?? '';
+    while (col < source.length && (source[col] === ' ' || source[col] === '\t')) col++;
+
+    if (col >= source.length) {
+      line++;
+      col = 0;
+      continue;
+    }
+
+    if (source[col] === '/' && source[col + 1] === '/') {
+      line++;
+      col = 0;
+      continue;
+    }
+
+    if (source[col] === '/' && source[col + 1] === '*') {
+      const end = skipBlockComment(lines, line, col, limit);
+      if (!end) return undefined;
+      line = end.line;
+      col = end.col;
+      continue;
+    }
+
+    return { line, col, text: source.slice(col) };
+  }
+  return undefined;
+}
+
+/**
+ * Position just past the closer that ends the (nested) block comment opening at
+ * `(line, col)`, searching up to `limit`; undefined when unterminated.
+ */
+function skipBlockComment(
+  lines: readonly string[],
+  line: number,
+  col: number,
+  limit: number
+): { line: number; col: number } | undefined {
+  let depth = 1;
+  let current = line;
+  let index = col + 2;
+
+  while (current <= limit) {
+    const text = lines[current] ?? '';
+    while (index < text.length) {
+      if (text[index] === '/' && text[index + 1] === '*') {
+        depth++;
+        index += 2;
+        continue;
+      }
+      if (text[index] === '*' && text[index + 1] === '/') {
+        depth--;
+        index += 2;
+        if (depth === 0) return { line: current, col: index };
+        continue;
+      }
+      index++;
+    }
+    current++;
+    index = 0;
+  }
+
+  return undefined;
+}
+
+/**
+ * Nesting depth of `<`/`>` from the item head up to (but not including) `open`,
+ * skipping strings and comments. `>` only lowers a positive depth, so `->` and
+ * comparison operators stay harmless. A positive result means `open` sits inside
+ * an unclosed generic argument list (e.g. `Bar<{ N }>`), not an item body.
+ */
+function unclosedAngleDepth(
+  lines: readonly string[],
+  fromLine: number,
+  fromCol: number,
+  open: BracketToken
+): number {
+  let depth = 0;
+  let line = fromLine;
+  let col = fromCol;
+
+  while (line <= open.line) {
+    const text = lines[line] ?? '';
+    const end = line === open.line ? open.col : text.length;
+    let hopped = false;
+
+    while (col < end) {
+      const ch = text[col];
+      if (ch === '"') {
+        col = skipStringInLine(text, col);
+        continue;
+      }
+      if (ch === '/' && text[col + 1] === '/') {
+        col = end;
+        break;
+      }
+      if (ch === '/' && text[col + 1] === '*') {
+        const stop = skipBlockComment(lines, line, col, open.line);
+        if (!stop) return depth;
+        line = stop.line;
+        col = stop.col;
+        hopped = true;
+        break;
+      }
+      if (ch === '<') depth++;
+      else if (ch === '>' && depth > 0) depth--;
+      col++;
+    }
+
+    if (hopped) continue;
+    line++;
+    col = 0;
+  }
+
+  return depth;
+}
+
+/** End column of the `"…"` string starting at `col` (or end of line when unterminated). */
+function skipStringInLine(text: string, col: number): number {
+  let index = col + 1;
+  while (index < text.length) {
+    if (text[index] === '\\') {
+      index += 2;
+      continue;
+    }
+    if (text[index] === '"') return index + 1;
+    index++;
+  }
+  return text.length;
 }
 
 /** True when only whitespace precedes the attribute on its line. */
@@ -252,54 +412,65 @@ function isAttributeStart(trimmed: string): boolean {
   return trimmed.startsWith('#[') || trimmed.startsWith('#![');
 }
 
-/** Column of the `#` when `text` starts (after whitespace) with an attribute, else -1. */
-function attributeStartColumn(text: string): number {
-  const trimmed = text.trimStart();
-  return isAttributeStart(trimmed) ? text.length - trimmed.length : -1;
-}
-
 /**
- * True when a line has no code: blank, a `//` comment, or a `/*` block comment.
- * A `*` prefix is deliberately NOT a comment here (`*p += 1;` is code); the
- * lexer already knows the interior of a real block comment.
+ * A single pass over the brackets that answers the three per-attribute queries
+ * the pairing used to rescan the whole file for: brace depth before an offset,
+ * whether the offset nests in a macro body, and the `{`s grouped by the depth
+ * they open at.
  */
-function isBlankOrComment(text: string): boolean {
-  const trimmed = text.trim();
-  return trimmed === '' || isCommentLine(trimmed);
+interface BracketIndex {
+  /** Brace depth immediately before `brackets[i]`; `brackets.length` is the final depth. */
+  readonly braceDepthBefore: Int32Array;
+  /** Macro-body braces open immediately before `brackets[i]`. */
+  readonly macroCountBefore: Int32Array;
+  /** Bracket indices of every `{`, grouped by the depth it opens at (ascending). */
+  readonly opensByDepth: Map<number, number[]>;
 }
 
-function isCommentLine(trimmed: string): boolean {
-  return trimmed.startsWith('//') || trimmed.startsWith('/*');
-}
-
-/** Brace depth (from the start of the file) just before `offset`. */
-function braceDepthBefore(brackets: readonly BracketToken[], offset: number): number {
-  let depth = 0;
-  for (const token of brackets) {
-    if (token.offset >= offset) break;
-    if (token.char === '{') depth++;
-    else if (token.char === '}') depth--;
-  }
-  return depth;
-}
-
-/**
- * True when ANY unmatched `{` before `offset` was opened on a
- * `macro_rules!`/`macro` body line. Checking the whole ancestor chain (not
- * just the innermost brace) matters because an arm body like `() => {` opens
- * its own brace inside the macro's.
- */
-function isInMacroBody(
+function buildBracketIndex(
   brackets: readonly BracketToken[],
-  offset: number,
   lines: readonly string[]
-): boolean {
-  const stack: BracketToken[] = [];
-  for (const token of brackets) {
-    if (token.offset >= offset) break;
-    if (token.char === '{') stack.push(token);
-    else if (token.char === '}') stack.pop();
+): BracketIndex {
+  const count = brackets.length;
+  const braceDepthBefore = new Int32Array(count + 1);
+  const macroCountBefore = new Int32Array(count + 1);
+  const opensByDepth = new Map<number, number[]>();
+  const macroStack: boolean[] = [];
+  let depth = 0;
+  let macroCount = 0;
+
+  for (let i = 0; i < count; i++) {
+    braceDepthBefore[i] = depth;
+    macroCountBefore[i] = macroCount;
+    const token = brackets[i];
+
+    if (token.char === '{') {
+      const macro = MACRO_BODY_LINE.test(lines[token.line] ?? '');
+      macroStack.push(macro);
+      if (macro) macroCount++;
+      const bucket = opensByDepth.get(depth);
+      if (bucket) bucket.push(i);
+      else opensByDepth.set(depth, [i]);
+      depth++;
+    } else if (token.char === '}') {
+      depth--;
+      if (macroStack.pop()) macroCount--;
+    }
   }
 
-  return stack.some((brace) => MACRO_BODY_LINE.test(lines[brace.line] ?? ''));
+  braceDepthBefore[count] = depth;
+  macroCountBefore[count] = macroCount;
+  return { braceDepthBefore, macroCountBefore, opensByDepth };
+}
+
+/** Index of the first bracket whose offset is >= `offset` (lower bound). */
+function lowerBound(brackets: readonly BracketToken[], offset: number): number {
+  let low = 0;
+  let high = brackets.length;
+  while (low < high) {
+    const mid = (low + high) >> 1;
+    if (brackets[mid].offset < offset) low = mid + 1;
+    else high = mid;
+  }
+  return low;
 }

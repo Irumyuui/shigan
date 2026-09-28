@@ -7,6 +7,12 @@ export interface RustConditionalInput {
   scanned: ScanResult;
   lines: readonly string[];
   environment: RustCfgEnvironment;
+  /**
+   * Precomputed item pairing ({@link pairCfgItems}). Supply it when several
+   * callers need the pairing for the same document so it is computed once;
+   * omitted, it is derived here.
+   */
+  spans?: readonly CfgItemSpan[];
 }
 
 /** `#[cfg(EXPR)]` → `EXPR`; `undefined` when the display is not a cfg attribute. */
@@ -28,7 +34,7 @@ export function rustConditionals(input: RustConditionalInput): ConditionalModel 
   const hints: ConditionalHint[] = [];
   const inactiveLines = new Set<number>();
 
-  for (const span of pairCfgItems(scanned, lines)) {
+  for (const span of input.spans ?? pairCfgItems(scanned, lines)) {
     const inactive = spanValue(span, environment) === false;
 
     const segments: ConditionalSegment[] = span.displays.map((display, index) => ({
@@ -97,7 +103,7 @@ export function explicitDecidedSpans(input: RustConditionalInput): Array<{
     inactive: boolean;
   }> = [];
 
-  for (const span of pairCfgItems(input.scanned, input.lines)) {
+  for (const span of input.spans ?? pairCfgItems(input.scanned, input.lines)) {
     const value = spanValue(span, explicitEnvironment);
     if (value !== undefined) {
       decided.push({

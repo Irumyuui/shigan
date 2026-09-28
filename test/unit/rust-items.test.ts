@@ -231,3 +231,52 @@ describe('pairCfgItems (same-line items)', () => {
     expect(spansFor('#[cfg(unix)] use a::b; fn g() {}\n')).toEqual([]);
   });
 });
+
+describe('pairCfgItems (block comments before the item)', () => {
+  it('skips a multi-line block comment between the attribute and the item', () => {
+    expect(spansFor('#[cfg(unix)]\n/*\n * c\n */\nfn f() {}\n')).toEqual([
+      { attrLine: 0, attrLines: [0], displays: ['#[cfg(unix)]'], endLine: 4 },
+    ]);
+  });
+
+  it('skips an empty-looking multi-line block comment', () => {
+    expect(spansFor('#[cfg(unix)]\n/*\n*/\nfn f() {}\n')).toEqual([
+      { attrLine: 0, attrLines: [0], displays: ['#[cfg(unix)]'], endLine: 3 },
+    ]);
+  });
+
+  it('skips a same-line block comment before the item', () => {
+    expect(spansFor('#[cfg(unix)] /* c */ fn f() {\n}\n')).toEqual([
+      { attrLine: 0, attrLines: [0], displays: ['#[cfg(unix)]'], endLine: 1 },
+    ]);
+  });
+
+  it('still treats a non-comment `*` line as an item head, not a comment', () => {
+    expect(spansFor('#[cfg(unix)]\n*p += 1;\nfn g() {\n}\n')).toEqual([]);
+  });
+});
+
+describe('pairCfgItems (brackets inside an attribute comment)', () => {
+  it('does not close a cfg attribute on a bracket inside a block comment', () => {
+    expect(spansFor('#[cfg(/* [ */ unix)]\nfn f() {}\n')).toEqual([
+      { attrLine: 0, attrLines: [0], displays: ['#[cfg(/* [ */ unix)]'], endLine: 1 },
+    ]);
+  });
+});
+
+describe('pairCfgItems (brace expressions in generic arguments)', () => {
+  it('does not treat a brace inside a generic argument as a type-alias body', () => {
+    expect(spansFor('#[cfg(unix)]\ntype T = Bar<{ N }>;\nfn g() {\n}\n')).toEqual([]);
+  });
+
+  it('does not treat a brace inside a generic argument as a static body', () => {
+    expect(spansFor('#[cfg(unix)]\nstatic S: Bar<{ N }> = X;\nfn g() {\n}\n')).toEqual([]);
+    expect(spansFor('#[cfg(unix)]\nstatic S: Bar<{N}> = 0;\n')).toEqual([]);
+  });
+
+  it('still pairs a body after a balanced generic parameter list', () => {
+    expect(spansFor('#[cfg(unix)]\nfn f<T: Bar<u8>>(a: T) {\n}\n')).toEqual([
+      { attrLine: 0, attrLines: [0], displays: ['#[cfg(unix)]'], endLine: 2 },
+    ]);
+  });
+});
