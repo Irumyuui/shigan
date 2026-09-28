@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { syntaxFor } from '../../src/core/language';
+import { languageKind, syntaxFor } from '../../src/core/language';
 
 describe('syntaxFor', () => {
   it('returns the C profile for c', () => {
@@ -24,6 +24,25 @@ describe('syntaxFor', () => {
   });
 
   it('falls back to the C profile for unknown ids', () => {
+    expect(syntaxFor('cuda')).toEqual(syntaxFor('c'));
+  });
+});
+
+describe('languageKind', () => {
+  it('maps the four known ids', () => {
+    expect(languageKind('c')).toBe('c');
+    expect(languageKind('cpp')).toBe('cpp');
+    expect(languageKind('csharp')).toBe('csharp');
+    expect(languageKind('rust')).toBe('rust');
+  });
+
+  it('gives rust a kind but no C syntax profile', () => {
+    expect(languageKind('rust')).toBe('rust');
+    expect(syntaxFor('rust')).toEqual(syntaxFor('c'));
+  });
+
+  it('falls back to C for unknown ids', () => {
+    expect(languageKind('cuda')).toBe('c');
     expect(syntaxFor('cuda')).toEqual(syntaxFor('c'));
   });
 });
