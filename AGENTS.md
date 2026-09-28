@@ -74,6 +74,10 @@ git tag -d v0.0.1
   `compileFlags` + optional `compile_commands.json`; C# uses project symbols + `shigan.csharp.define` + `compileFlags`
   and never `compile_commands.json`. The inlay-hint provider, hover provider and diagnostic command all go through
   `computeDocumentHints`; settings changes must call `invalidate()` (which also clears the csproj cache).
+- `src/extension.ts` watches `**/*.csproj` per workspace folder (create/change/delete) with its own debounce
+  (`projectTimer`, deliberately separate from the cursor-triggered `refreshTimer`) and calls
+  `invalidateProjectFiles()` — the targeted counterpart of `invalidate()` that leaves the `compile_commands` cache
+  alone. Watchers are rebuilt on `onDidChangeWorkspaceFolders` and disposed through a single `Disposable`.
 - Rendering is inlay hints on purpose: only `InlayHintLabelPart.command` supports click-to-jump, so colours come from
   the theme (`editorInlayHint.foreground`) and there is no colour setting.
 - A hint is a `HintPart[]` (`text`, `target`, `title`); `hint.text` must stay the concatenation of the part texts
@@ -116,13 +120,19 @@ git tag -d v0.0.1
 - `test/unit/performance.test.ts` is a scale guard, not a benchmark: synthetic 20k–100k-line documents with
   deliberately generous wall-clock budgets. Keep the budgets loose (they catch superlinear regressions, not
   micro-timing) — tightening them makes the suite flaky.
-- `test/fixtures/{brackets,macros}/*.{c,cpp,cs}` + `.expected.json` golden files; the harness picks the profile from
-  the extension, and a macro fixture may add `<case>.macros.json` to seed macros. Verify expectations by hand or with
-  `bun run inspect` — never blind-snapshot.
+- `test/fixtures/{c,cpp,csharp}/{brackets,macros}/` + `.expected.json` golden files; the language comes from the
+  directory, never from the extension, and a macro fixture may add `<case>.macros.json` to seed macros. Verify
+  expectations by hand or with `bun run inspect` — never blind-snapshot.
+- Language-specific unit tests are split per language (`evaluate-csharp.test.ts`, `flags-cpp.test.ts`,
+  `cpp-scan.test.ts`, `csharp-scan.test.ts`, `csproj*.test.ts`); `language.test.ts` covers the profile mapping.
+- `test/integration/support.ts` holds the shared `BASELINE` / `openFixture` / hint helpers. Every integration suite
+  owns its own `test/integration/workspace/fixture/<suite>` directory and cleans only that — never the shared
+  `fixture/` root, which would delete another suite's files.
 - `test/integration/**` runs in a real VSCode; `.vscode-test.mjs` globs `out/integration/**/*.test.js`, built from
   `test/integration/*.test.ts`.
-- `test/integration/languages.test.ts` covers per-language routing and C# project symbols. The test host runs with
-  `--disable-extensions`, so it calls `vscode.languages.setTextDocumentLanguage` to force the language id.
+- `test/integration/{cpp,csharp}.test.ts` cover per-language routing, C# project symbols and the csproj watcher. The
+  test host runs with `--disable-extensions`, so `openFixture` calls `vscode.languages.setTextDocumentLanguage` to
+  force the language id.
 - `vscode.executeInlayHintProvider` works in the test host: `extension.test.ts` uses it to assert the real provider
   output (label parts and tooltips), which the diagnostic command alone cannot cover.
 - `test/manual/**` is only for F5 self-testing.

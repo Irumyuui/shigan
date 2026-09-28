@@ -49,7 +49,8 @@ and preprocessor conditionals.
 C and C++ are lexed directly, including C++ raw string literals (`R"(...)"`).
 For C#, the conditional symbols come from the `DefineConstants` of the nearest
 `.csproj` / `Directory.Build.props` plus the implicit target-framework symbols,
-and can be overridden through the `shigan.csharp.*` settings.
+and can be overridden through the `shigan.csharp.*` settings. Editing a
+`*.csproj` refreshes the hints automatically, without reloading the window.
 
 Hints are **inlay hints**, the only decoration-like UI that supports a click
 action. Their colour comes from the theme (`editorInlayHint.foreground`) and
@@ -116,6 +117,10 @@ Basic settings:
   when it ends on a type declaration (`class`/`struct`/`interface`/`enum`/
   `namespace`/`record`/`union`); other wrapped statements keep the plain
   previous-line label.
+- Only `*.csproj` is watched: editing `Directory.Build.props` or
+  `compile_commands.json` still needs a settings change (or a window reload) to
+  take effect, and any `*.csproj` change clears the project caches of every
+  workspace folder.
 
 ## Development
 
