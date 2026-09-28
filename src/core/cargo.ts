@@ -59,6 +59,11 @@ const DEPENDENCY_TABLES = new Set(['dependencies', 'dev-dependencies', 'build-de
  * `[workspace]` table and no top-level `[package]`. (`[workspace.package]` does
  * not count as a package.)
  *
+ * A `[features]` entry must be an array of strings. Anything else — a bare
+ * string, a number, a table, or a dotted key such as `foo.bar = [...]` (which
+ * real Cargo rejects) — makes the whole parse return `undefined`: we refuse to
+ * invent a feature universe from a manifest Cargo would not accept.
+ *
  * @param toml Raw manifest contents.
  * @returns The extracted features, or `undefined` on malformed input or when the
  *   manifest contains nothing usable (no `[features]`, no dependency entries and
@@ -80,7 +85,11 @@ export function parseCargoFeatures(toml: string): CargoFeatures | undefined {
   let sawDependencyEntry = false;
 
   for (const assignment of scan.assignments) {
-    if (isTable(['features'])(assignment.table)) {
+    if (assignment.table[0] === 'features') {
+      // A dotted key (`foo.bar = [...]`) or a `[features.foo]` sub-table is not a
+      // feature array. Cargo rejects such a manifest, so refuse to guess a
+      // universe rather than silently dropping the entry.
+      if (!isTable(['features'])(assignment.table)) return undefined;
       const entries = parseStringArray(assignment.value);
       if (entries === undefined) return undefined;
       declared.add(assignment.key);

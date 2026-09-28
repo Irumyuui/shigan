@@ -198,6 +198,41 @@ describe('parseCargoFeatures', () => {
     expect(sorted(features?.defaults)).toEqual(['a']);
   });
 
+  describe('feature value handling', () => {
+    it('rejects a dotted key under [features] instead of dropping it', () => {
+      const manifest = [
+        '[package]',
+        'name = "demo"',
+        '',
+        '[features]',
+        'foo.bar = ["x"]',
+      ].join('\n');
+
+      expect(parseCargoFeatures(manifest)).toBeUndefined();
+    });
+
+    it('rejects a non-array default value', () => {
+      const manifest = ['[features]', 'default = "std"'].join('\n');
+
+      expect(parseCargoFeatures(manifest)).toBeUndefined();
+    });
+
+    it('rejects a non-array value for a normal feature key', () => {
+      const manifest = ['[features]', 'a = "b"'].join('\n');
+
+      expect(parseCargoFeatures(manifest)).toBeUndefined();
+    });
+
+    it('still parses a default that references a declared feature', () => {
+      const manifest = ['[features]', 'default = ["std"]', 'std = []'].join('\n');
+
+      const features = parseCargoFeatures(manifest);
+
+      expect(sorted(features?.declared)).toEqual(['default', 'std']);
+      expect(sorted(features?.defaults)).toEqual(['std']);
+    });
+  });
+
   describe('malformed input', () => {
     it('returns undefined for an unterminated table header', () => {
       expect(parseCargoFeatures('[features\ndefault = ["a"]')).toBeUndefined();
