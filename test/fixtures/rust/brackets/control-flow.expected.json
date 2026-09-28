@@ -1,0 +1,79 @@
+[
+  {
+    "line": 3,
+    "text": " <- :2-4 loop",
+    "kind": "bracket",
+    "openLine": 1,
+    "closeLine": 3
+  },
+  {
+    "line": 6,
+    "text": " <- :5-7 while cond()",
+    "kind": "bracket",
+    "openLine": 4,
+    "closeLine": 6
+  },
+  {
+    "line": 9,
+    "text": " <- :8-10 while let Some(x) = y",
+    "kind": "bracket",
+    "openLine": 7,
+    "closeLine": 9
+  },
+  {
+    "line": 12,
+    "text": " <- :11-13 for x in xs",
+    "kind": "bracket",
+    "openLine": 10,
+    "closeLine": 12
+  },
+  {
+    "line": 18,
+    "text": " <- :17-19 if *a == *b",
+    "kind": "bracket",
+    "openLine": 16,
+    "closeLine": 18
+  },
+  {
+    "line": 19,
+    "text": " <- :16-20 for b in xs",
+    "kind": "bracket",
+    "openLine": 15,
+    "closeLine": 19
+  },
+  {
+    "line": 20,
+    "text": " <- :15-21 'outer: for a in xs",
+    "kind": "bracket",
+    "openLine": 14,
+    "closeLine": 20
+  },
+  {
+    "line": 23,
+    "text": " <- :22-24 if let Some(v) = y",
+    "kind": "bracket",
+    "openLine": 21,
+    "closeLine": 23
+  },
+  {
+    "line": 27,
+    "text": " <- :26-28 Some(_) =>",
+    "kind": "bracket",
+    "openLine": 25,
+    "closeLine": 27
+  },
+  {
+    "line": 29,
+    "text": " <- :25-30 match y",
+    "kind": "bracket",
+    "openLine": 24,
+    "closeLine": 29
+  },
+  {
+    "line": 30,
+    "text": " <- :1-31 fn control_flow(xs: &[i32], y: Option<i32>)",
+    "kind": "bracket",
+    "openLine": 0,
+    "closeLine": 30
+  }
+]

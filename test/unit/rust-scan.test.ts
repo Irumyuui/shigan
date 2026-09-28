@@ -18,7 +18,48 @@ describe('rust lifetimes vs chars', () => {
   });
 
   it('scans a labelled loop and its break label', () => {
-    expect(chars("'outer: loop { break 'outer; }")).toBe('{}');
+    const b = scanRust("'outer: loop { break 'outer; }").brackets;
+    expect(b.map((x) => x.char).join('')).toBe('{}');
+    expect(b).toEqual([
+      { char: '{', offset: 13, line: 0, col: 13 },
+      { char: '}', offset: 29, line: 0, col: 29 },
+    ]);
+  });
+
+  it('scans a label on a for loop and its continue target', () => {
+    const b = scanRust("'outer: for x in xs { continue 'outer; }").brackets;
+    expect(b.map((x) => x.char).join('')).toBe('{}');
+    expect(b[0]).toMatchObject({ offset: 20, line: 0, col: 20 });
+  });
+
+  it('scans labels on a while and a while let', () => {
+    expect(chars("'o: while cond { break 'o; }")).toBe('{}');
+    expect(chars("'o: while let Some(x) = y { break 'o; }")).toBe('(){}');
+  });
+
+  it('keeps a label and a following char literal apart', () => {
+    const b = scanRust("'a: loop { break 'a; } let c = 'a';").brackets;
+    expect(b.map((x) => x.char).join('')).toBe('{}');
+    expect(b).toEqual([
+      { char: '{', offset: 9, line: 0, col: 9 },
+      { char: '}', offset: 21, line: 0, col: 21 },
+    ]);
+  });
+
+  it('skips braced unicode escape char literals', () => {
+    expect(chars("'\\u{1F600}'")).toBe('');
+    expect(chars("'\\u{7F}'")).toBe('');
+  });
+
+  it('scans a raw lifetime', () => {
+    expect(chars("'r#lt")).toBe('');
+  });
+
+  it('tells a label from a char literal at the same position', () => {
+    const label = scanRust("'a: loop {}").brackets;
+    expect(label.map((x) => x.char).join('')).toBe('{}');
+    expect(label[0].col).toBe(9);
+    expect(scanRust("'a'").brackets).toEqual([]);
   });
 
   it('distinguishes an underscore char from an underscore lifetime', () => {
@@ -134,6 +175,55 @@ describe('rust attributes', () => {
     const list = cfgs('#[cfg_attr(feature = "x", derive(Debug))]');
     expect(list).toHaveLength(1);
     expect(list[0].name).toBe('cfg_attr');
+  });
+});
+
+describe('rust control flow', () => {
+  it('scans a bare loop', () => {
+    expect(chars('loop { }')).toBe('{}');
+  });
+
+  it('scans a while loop', () => {
+    expect(chars('while cond { }')).toBe('{}');
+  });
+
+  it('scans a while let binding', () => {
+    expect(chars('while let Some(x) = y { }')).toBe('(){}');
+  });
+
+  it('scans a for over an iterator', () => {
+    expect(chars('for x in xs { }')).toBe('{}');
+  });
+
+  it('scans a for over an exclusive and an inclusive range', () => {
+    expect(chars('for i in 0..10 { }')).toBe('{}');
+    expect(chars('for i in 0..=10 { }')).toBe('{}');
+  });
+
+  it('scans nested for, while and loop braces', () => {
+    const b = scanRust('for i in xs { while c { loop { } } }').brackets;
+    expect(b.map((x) => x.char).join('')).toBe('{{{}}}');
+    expect(b.map((x) => [x.line, x.col])).toEqual([
+      [0, 12],
+      [0, 22],
+      [0, 29],
+      [0, 31],
+      [0, 33],
+      [0, 35],
+    ]);
+  });
+
+  it('scans if let with an else block', () => {
+    expect(chars('if let Some(x) = y { } else { }')).toBe('(){}{}');
+  });
+
+  it('scans a match with block arms', () => {
+    expect(chars('match x { _ => { } }')).toBe('{{}}');
+  });
+
+  it('records no cfgs for pure control flow', () => {
+    expect(cfgs('loop { }')).toEqual([]);
+    expect(cfgs('if let Some(x) = y { } else { }')).toEqual([]);
   });
 });
 
