@@ -42,7 +42,7 @@ test: typecheck test-unit
 test-integration:
     bun run test:integration
 
-# Every check CI runs, in one recipe (CI itself calls the steps separately)
+# Every verification check CI runs, in one recipe (CI calls the steps separately and adds `just package`)
 ci: typecheck test-unit test-integration
 
 # Remove dist/, out/ and artifacts/

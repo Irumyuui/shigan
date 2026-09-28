@@ -15,7 +15,7 @@ The justfile selects PowerShell only on Windows (`[windows] set shell`); on Linu
 ```sh
 just                   # list recipes
 just test              # tsc --noEmit + vitest (must pass)
-just test-integration  # builds dist + out/integration, runs an isolated VSCode (.vscode-test/, ~320 MB, cached after first run)
+just test-integration  # builds dist + out/integration, runs an isolated VSCode (.vscode-test/, ~1 GB extracted per cached build, cached after first run)
 just package           # -> artifacts/shigan-<version>.vsix (esbuild + vsce --no-dependencies)
 just package-min       # minified, no sourcemap
 bunx vitest run test/unit/hints.test.ts        # one unit file
