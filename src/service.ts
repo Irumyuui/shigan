@@ -1,6 +1,5 @@
 import * as vscode from 'vscode';
 import { createVariableResolver, ShiganConfig } from './config';
-import { ConditionalHint, ConditionalModel } from './core/conditionals';
 import { mergeCSharpMacros } from './core/csharp';
 import { parseCompileFlags } from './core/flags';
 import { computeHints } from './core/hints';
@@ -10,7 +9,7 @@ import { scan } from './core/lexer/tokenizer';
 import { evaluateConditionals } from './core/match/c-preprocessor';
 import { hostCfg, parseRustCfgEntries, RustCfgEnvironment } from './core/match/rust/cfg';
 import { explicitDecidedSpans, rustConditionals } from './core/match/rust/conditionals';
-import { mergeRustInactiveLines } from './core/match/rust/diagnostics';
+import { applyMergedInactivity, mergeRustInactiveLines } from './core/match/rust/diagnostics';
 import { Hint, MacroDef, Trigger } from './core/types';
 import { clearCargoCache, findCargoFeatures, hasAncestorManifest } from './cargo-source';
 import { clearCsprojCache, findCsprojSymbols } from './csproj-source';
@@ -131,10 +130,10 @@ export function computeDocumentHints(
 
     // rust-analyzer's diagnostics are authoritative when present (or when the
     // extension is active); explicit `shigan.rust.cfg`-decided spans still win.
-    const explicitSpanLines = new Set<number>();
+    const explicitAttributeLines = new Set<number>();
     const explicitInactiveLines = new Set<number>();
     for (const span of explicitDecidedSpans({ scanned, lines, environment })) {
-      for (let line = span.attrLine; line <= span.endLine; line++) explicitSpanLines.add(line);
+      for (const line of span.attrLines) explicitAttributeLines.add(line);
       if (span.inactive) {
         for (let line = span.attrLine; line <= span.endLine; line++) {
           explicitInactiveLines.add(line);
@@ -145,19 +144,16 @@ export function computeDocumentHints(
     const diagnostics = readRustDiagnostics(document);
     const merged = mergeRustInactiveLines({
       lexicalLines: model.inactiveLines ?? new Set<number>(),
-      explicitSpanLines,
+      explicitAttributeLines,
       explicitInactiveLines,
       diagnostics: diagnostics.ranges,
       authoritative: diagnostics.authoritative,
       lineCount: lines.length,
     });
-    // Re-derive the model flags so a span rust-analyzer calls inactive shows
-    // `(inactive)` even when the lexical model said active (and vice versa for
-    // explicitly-decided spans).
-    const adjustedModel: ConditionalModel = {
-      ...model,
-      hints: model.hints.map((hint) => ({ ...hint, inactive: hintInactiveIn(hint, merged) })),
-    };
+    // Re-derive the model flags from each hint's own attribute lines, so a span
+    // rust-analyzer calls inactive shows `(inactive)` even when the lexical
+    // model said active (and a nested inactive item cannot flip its parent).
+    const adjustedModel = applyMergedInactivity(model, merged);
 
     hints = computeHints(text, {
       brackets: config.show.includes('brackets'),
@@ -211,16 +207,6 @@ export function computeDocumentHints(
     hints,
   });
   return hints;
-}
-
-/** Whether any line of a model hint's span is in the merged inactive set. */
-function hintInactiveIn(hint: ConditionalHint, merged: ReadonlySet<number>): boolean {
-  const from = Math.min(hint.cursorFrom, hint.cursorTo);
-  const to = Math.max(hint.cursorFrom, hint.cursorTo);
-  for (let line = from; line <= to; line++) {
-    if (merged.has(line)) return true;
-  }
-  return false;
 }
 
 /**

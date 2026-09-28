@@ -1,3 +1,5 @@
+import { ConditionalModel } from '../../conditionals';
+
 /**
  * Pure helpers for rust-analyzer's inactive-code diagnostics.
  *
@@ -46,12 +48,30 @@ export function inactiveLinesFromRanges(
   return lines;
 }
 
+/**
+ * Re-derives every hint's `inactive` flag from the merged inactive-line set,
+ * using the hint's OWN cfg-attribute lines (the segment targets). Scanning the
+ * whole span would let a nested inactive item flip its enclosing hint.
+ */
+export function applyMergedInactivity(
+  model: ConditionalModel,
+  merged: ReadonlySet<number>
+): ConditionalModel {
+  return {
+    ...model,
+    hints: model.hints.map((hint) => ({
+      ...hint,
+      inactive: hint.segments.some((segment) => merged.has(segment.target.line)),
+    })),
+  };
+}
+
 export interface RustInactiveMergeInput {
   /** Lines the lexical model decided inactive. */
   lexicalLines: ReadonlySet<number>;
-  /** Lines covered by spans whose predicate is FULLY decided by explicit `shigan.rust.cfg`. */
-  explicitSpanLines: ReadonlySet<number>;
-  /** Of those, the ones the lexical model says are inactive. */
+  /** The cfg-ATTRIBUTE lines of spans whose predicate is FULLY decided by explicit `shigan.rust.cfg`. */
+  explicitAttributeLines: ReadonlySet<number>;
+  /** Of those spans, every line the explicit model says is inactive. */
   explicitInactiveLines: ReadonlySet<number>;
   /** rust-analyzer's inactive-code ranges. */
   diagnostics: readonly DiagnosticRangeLike[];
@@ -65,15 +85,18 @@ export interface RustInactiveMergeInput {
  *
  * Diagnostic ranges are authoritative when `authoritative` is set: they
  * *replace* the lexical negatives (never union), because a missing diagnostic
- * for an unknown predicate does not mean the code is live. Explicit
- * `shigan.rust.cfg`-decided spans are the exception — the user's intent wins
- * there, so their inactive lines are re-added and their ranges are excluded
- * from the diagnostic set. Without an authoritative source we can only widen
- * the lexical result with whatever diagnostics we did see.
+ * for an unknown predicate does not mean the code is live. A diagnostic is
+ * suppressed — the user's explicit `shigan.rust.cfg` intent wins — only when its
+ * START line is a cfg-attribute line of an explicitly-decided span; a nested
+ * range inside such a span survives. The explicitly-decided spans' own inactive
+ * lines are always added back. Without an authoritative source we can only
+ * widen the lexical result with whatever diagnostics we did see.
  */
 export function mergeRustInactiveLines(input: RustInactiveMergeInput): Set<number> {
-  const fromDiagnostics = inactiveLinesFromRanges(input.diagnostics, input.lineCount);
-  for (const line of input.explicitSpanLines) fromDiagnostics.delete(line);
+  const keptDiagnostics = input.diagnostics.filter(
+    (range) => !input.explicitAttributeLines.has(range.startLine)
+  );
+  const fromDiagnostics = inactiveLinesFromRanges(keptDiagnostics, input.lineCount);
 
   if (input.authoritative) {
     const result = new Set(fromDiagnostics);

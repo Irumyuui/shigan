@@ -83,16 +83,29 @@ function spanValue(span: CfgItemSpan, environment: RustCfgEnvironment): boolean 
  * user's `shigan.rust.cfg` entries determine, so rust-analyzer's diagnostics
  * must not override them.
  */
-export function explicitDecidedSpans(
-  input: RustConditionalInput
-): Array<{ attrLine: number; endLine: number; inactive: boolean }> {
+export function explicitDecidedSpans(input: RustConditionalInput): Array<{
+  attrLine: number;
+  attrLines: readonly number[];
+  endLine: number;
+  inactive: boolean;
+}> {
   const explicitEnvironment: RustCfgEnvironment = { explicit: input.environment.explicit };
-  const decided: Array<{ attrLine: number; endLine: number; inactive: boolean }> = [];
+  const decided: Array<{
+    attrLine: number;
+    attrLines: readonly number[];
+    endLine: number;
+    inactive: boolean;
+  }> = [];
 
   for (const span of pairCfgItems(input.scanned, input.lines)) {
     const value = spanValue(span, explicitEnvironment);
     if (value !== undefined) {
-      decided.push({ attrLine: span.attrLine, endLine: span.endLine, inactive: value === false });
+      decided.push({
+        attrLine: span.attrLine,
+        attrLines: span.attrLines,
+        endLine: span.endLine,
+        inactive: value === false,
+      });
     }
   }
 
