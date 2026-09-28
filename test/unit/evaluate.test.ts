@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { syntaxFor } from '../../src/core/language';
 import { scan } from '../../src/core/lexer/tokenizer';
 import { evaluateConditionals } from '../../src/core/match/evaluate';
 import { MacroDef } from '../../src/core/types';
@@ -9,6 +10,14 @@ function evaluate(text: string, seed: Record<string, string> = {}, trackFileDefi
     macros.set(name, { value, functionLike: false });
   }
   return evaluateConditionals(scan(text).directives, { macros, trackFileDefines });
+}
+
+function evaluateCSharp(text: string, seed: Record<string, string> = {}) {
+  const macros = new Map<string, MacroDef>();
+  for (const [name, value] of Object.entries(seed)) {
+    macros.set(name, { value, functionLike: false });
+  }
+  return evaluateConditionals(scan(text).directives, { macros, syntax: syntaxFor('csharp') });
 }
 
 function sortedLines(lines: Set<number>): number[] {
@@ -92,5 +101,45 @@ describe('evaluateConditionals', () => {
     const result = evaluate('#if defined(A) && \\\n    defined(B)\nint a;\n#endif\n', { A: '1', B: '1' });
     expect(result.branchActive.get(0)).toBe(true);
     expect(result.blockActive.get(0)).toBe(true);
+  });
+});
+
+describe('evaluateConditionals (C#)', () => {
+  it('treats a value-less #define as truthy', () => {
+    const { branchActive, inactiveLines, blockActive } = evaluateCSharp(
+      '#define FOO\n#if FOO\nint a;\n#else\nint b;\n#endif\n'
+    );
+    expect(branchActive.get(1)).toBe(true);
+    expect(branchActive.get(3)).toBe(false);
+    expect(sortedLines(inactiveLines)).toEqual([4]);
+    expect(blockActive.get(1)).toBe(true);
+  });
+
+  it('evaluates the true/false literals', () => {
+    const truthy = evaluateCSharp('#if true\nint a;\n#else\nint b;\n#endif\n');
+    expect(truthy.branchActive.get(0)).toBe(true);
+    expect(truthy.branchActive.get(2)).toBe(false);
+
+    const falsy = evaluateCSharp('#if false\nint a;\n#else\nint b;\n#endif\n');
+    expect(falsy.branchActive.get(0)).toBe(false);
+    expect(falsy.branchActive.get(2)).toBe(true);
+  });
+
+  it('lets a file definition override the true/false literals', () => {
+    const { branchActive } = evaluateCSharp('#define true 0\n#if true\nint a;\n#else\nint b;\n#endif\n');
+    expect(branchActive.get(1)).toBe(false);
+    expect(branchActive.get(3)).toBe(true);
+  });
+
+  it('keeps an unresolved use of an undefined symbol conservative', () => {
+    // `UNKNOWN(1)` cannot be resolved deterministically, so nothing is marked
+    // inactive and both branches stay live. (A bare `#if UNKNOWN` is a
+    // different, known-false case: identifiers evaluate to 0.)
+    const { branchActive, inactiveLines } = evaluateCSharp(
+      '#if UNKNOWN(1)\nint a;\n#else\nint b;\n#endif\n'
+    );
+    expect(sortedLines(inactiveLines)).toEqual([]);
+    expect(branchActive.get(0)).toBe(true);
+    expect(branchActive.get(2)).toBe(true);
   });
 });

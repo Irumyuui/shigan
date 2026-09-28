@@ -156,6 +156,10 @@ function applyStandardMacros(
   standard: string | undefined,
   syntax: LanguageSyntax
 ): void {
+  if (syntax.id === 'csharp') {
+    // C# has no compiler-defined standard macros Shigan needs to model.
+    return;
+  }
   if (syntax.id === 'cpp') {
     // C++ defines `__cplusplus` (from -std) and neither of the C macros.
     const cppVersion = standard ? CPP_STANDARD_VERSIONS[standard] : undefined;

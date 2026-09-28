@@ -1,3 +1,4 @@
+import { C_SYNTAX, LanguageSyntax } from '../language';
 import { DirectiveToken, MacroDef } from '../types';
 import { parseDefine, parseUndef } from '../flags';
 import { evaluateExpression } from './expression';
@@ -5,6 +6,12 @@ import { evaluateExpression } from './expression';
 export interface EvaluationOptions {
   macros: Map<string, MacroDef>;
   trackFileDefines?: boolean;
+  /**
+   * Language profile whose conditional semantics apply. Defaults to C; C#
+   * additionally makes value-less `#define` symbols truthy and predefines the
+   * `true`/`false` literals.
+   */
+  syntax?: LanguageSyntax;
 }
 
 export interface EvaluationResult {
@@ -44,6 +51,12 @@ export function evaluateConditionals(
 ): EvaluationResult {
   const macros = new Map(options.macros);
   const trackFileDefines = options.trackFileDefines !== false;
+  const syntax = options.syntax ?? C_SYNTAX;
+  if (syntax.id === 'csharp') {
+    // C# predefines the boolean literals unless the file overrides them.
+    if (!macros.has('true')) macros.set('true', { value: '1', functionLike: false });
+    if (!macros.has('false')) macros.set('false', { value: '0', functionLike: false });
+  }
   const stack: Frame[] = [];
   const frames: Frame[] = [];
 
@@ -57,7 +70,7 @@ export function evaluateConditionals(
     const name = directive.name;
 
     if (name === 'define') {
-      if (trackFileDefines && currentActive()) applyDefine(macros, directive);
+      if (trackFileDefines && currentActive()) applyDefine(macros, directive, syntax);
       continue;
     }
     if (name === 'undef') {
@@ -162,9 +175,18 @@ function conditionValue(directive: DirectiveToken, macros: Map<string, MacroDef>
   return { value: negated ? (defined ? 0 : 1) : defined, unknown: false };
 }
 
-function applyDefine(macros: Map<string, MacroDef>, directive: DirectiveToken): void {
+function applyDefine(
+  macros: Map<string, MacroDef>,
+  directive: DirectiveToken,
+  syntax: LanguageSyntax
+): void {
   const parsed = parseDefine(directive.display);
-  if (parsed) macros.set(parsed.name, { value: parsed.value, functionLike: parsed.functionLike });
+  if (!parsed) return;
+  // C# defines a value-less object-like `#define NAME` as `1` (its preprocessor
+  // has no separate "defined but empty" state for `#if NAME`).
+  const value =
+    syntax.id === 'csharp' && !parsed.functionLike && parsed.value === '' ? '1' : parsed.value;
+  macros.set(parsed.name, { value, functionLike: parsed.functionLike });
 }
 
 function applyUndef(macros: Map<string, MacroDef>, directive: DirectiveToken): void {

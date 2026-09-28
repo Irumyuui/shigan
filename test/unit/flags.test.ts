@@ -5,6 +5,7 @@ import {
   parseUndef,
   substituteVariables,
 } from '../../src/core/flags';
+import { syntaxFor } from '../../src/core/language';
 import { evaluateExpression } from '../../src/core/match/expression';
 
 describe('parseCompileFlags', () => {
@@ -31,6 +32,13 @@ describe('parseCompileFlags', () => {
     expect(standard).toBe('c11');
     expect(evaluateExpression('__STDC_VERSION__', macros)).toBe(201112);
     expect(evaluateExpression('__STDC__', macros)).toBe(1);
+  });
+
+  it('injects no standard macros for C#', () => {
+    const { macros } = parseCompileFlags(['-std=c++17'], undefined, syntaxFor('csharp'));
+    expect(macros.has('__STDC__')).toBe(false);
+    expect(macros.has('__STDC_VERSION__')).toBe(false);
+    expect(macros.has('__cplusplus')).toBe(false);
   });
 
   it('collects include paths and unknown flags', () => {
