@@ -78,7 +78,6 @@ Basic settings:
   "shigan.trigger": "always",
   "shigan.inheritCompileCommands": true,
   "shigan.showRange": true,
-  "telemetry.feedback.enabled": false,
   "shigan.showLabel": true,
   "shigan.showRangeThreshold": 0,
   "shigan.preprocessor.skipInactiveDirectives": false
