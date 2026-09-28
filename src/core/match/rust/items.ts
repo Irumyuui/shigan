@@ -6,6 +6,13 @@ export interface CfgItemSpan {
   attrLine: number;
   /** Every cfg attribute line of the group, source order (one clickable segment each). */
   attrLines: readonly number[];
+  /**
+   * Every line of the item's leading attribute/doc-comment block from its first
+   * such line through the LAST cfg attribute line (always includes `attrLines`).
+   * rust-analyzer's inactive-code range starts at the item's first attribute, so
+   * this is what an explicit `shigan.rust.cfg` decision suppresses.
+   */
+  headLines: readonly number[];
   /** Each attribute's normalized display, source order. */
   displays: readonly string[];
   /** Inclusive end line of the gated item. */
@@ -15,20 +22,33 @@ export interface CfgItemSpan {
 /** How far past the first attribute line a gated item (and its body) may start/end. */
 const MAX_LOOKAHEAD = 300;
 
-/** A brace-opened line that is a macro body (macro_rules! / declarative macro). */
-const MACRO_BODY_LINE = /^\s*(?:pub\s+)?(?:macro_rules\s*!|macro\b)/;
-
 /** Optional item modifier chain, then one of Rust's item keywords. */
 const ITEM_HEAD =
-  /^(?:(?:pub(?:\s*\([^)]*\))?|async|unsafe|extern(?:\s+"[^"]*")?|const|default)\s+)*(fn|struct|enum|union|trait|impl|mod|macro_rules|macro|type|static|use|const)\b/;
+  /^(?:(?:pub(?:\s*\([^)]*\))?|async|unsafe|extern(?:\s+"[^"]*")?|const|default)\s+)*(fn|struct|enum|union|trait|impl|mod|macro_rules|macro|type|static|use|const|extern)\b/;
+
+const OPENERS = new Set(['(', '[', '{']);
+
+/**
+ * A macro definition's head at the END of a line: `macro_rules! name` or
+ * `macro name`, optionally behind `pub`, preceded by a non-word boundary so a
+ * path like `my_macro m` cannot match. The delimiter that follows (possibly on
+ * a later line) opens the macro body.
+ */
+const MACRO_HEAD_TAIL =
+  /(?:^|[^\w])(?:pub(?:\s*\([^)]*\))?\s+)?(?:macro_rules\s*!|macro(?![A-Za-z0-9_]))\s+[A-Za-z_][A-Za-z0-9_]*\s*$/;
+
+/** A line that starts an attribute or a doc comment (used for `headLines`). */
+const HEAD_LINE_START = /^(?:#!?\[|\/\/\/|\/\/!|\/\*!|\/\*\*)/;
 
 /**
  * Pairs outer `#[cfg(...)]` attributes with the item they gate.
  *
- * Only `cfg` (not `cfg_attr`), only outer attributes, only attributes that are
- * the first non-whitespace token on their own line, and never inside a
- * `macro_rules!`/`macro` body. Consecutive attributes (including non-cfg ones)
- * between the gate and its item are merged into a single span.
+ * Only `cfg` (not `cfg_attr`), only outer attributes, only leading attributes
+ * (the first non-whitespace token on their line, or the start of a later group
+ * on the same line), and never inside a `macro_rules!`/`macro` body — the body
+ * delimiter is found structurally, so it may be `(`/`[`/`{` and may sit on a
+ * different line than the macro head. Consecutive attributes (including non-cfg
+ * ones) between the gate and its item are merged into a single span.
  *
  * An item is only reported when its body's first depth-equal `{` (and its
  * matching `}`) are found within 300 lines — so semicolon-terminated items
@@ -44,28 +64,28 @@ export function pairCfgItems(scanned: ScanResult, lines: readonly string[]): Cfg
   if (all.length === 0) return [];
 
   const brackets = scanned.brackets;
-  const index = buildBracketIndex(brackets, lines);
+  const pairs = matchBrackets(brackets);
+  const index = buildBracketIndex(brackets, lines, pairs.byOpenOffset);
 
   const cfgs = all.filter(
     (attr) =>
       attr.name === 'cfg' &&
       !attr.inner &&
-      isFirstOnLine(attr, lines) &&
+      isLeadingAttribute(attr, lines) &&
       index.macroCountBefore[lowerBound(brackets, attr.offset)] === 0
   );
   if (cfgs.length === 0) return [];
 
   const cfgByPos = new Map<string, CfgAttributeToken>();
   for (const attr of all) {
-    if (attr.name === 'cfg' && !attr.inner) cfgByPos.set(`${attr.line}:${attr.col}`, attr);
+    if (attr.name === 'cfg' && !attr.inner) cfgByPos.set(attrKey(attr), attr);
   }
 
-  const pairs = matchBrackets(brackets);
-  const consumed = new Set<number>();
+  const consumed = new Set<string>();
   const spans: CfgItemSpan[] = [];
 
   for (const attr of cfgs) {
-    if (consumed.has(attr.line)) continue;
+    if (consumed.has(attrKey(attr))) continue;
     const span = pairOne(attr, cfgByPos, consumed, brackets, index, pairs.byOpenOffset, lines);
     if (span) spans.push(span);
   }
@@ -77,7 +97,7 @@ export function pairCfgItems(scanned: ScanResult, lines: readonly string[]): Cfg
 function pairOne(
   first: CfgAttributeToken,
   cfgByPos: Map<string, CfgAttributeToken>,
-  consumed: Set<number>,
+  consumed: Set<string>,
   brackets: readonly BracketToken[],
   index: BracketIndex,
   byOpenOffset: Map<number, { open: BracketToken; close: BracketToken }>,
@@ -118,8 +138,10 @@ function pairOne(
 
   if (itemLine < 0) return undefined;
 
-  // Claim every attribute of the group, found or not, so none is processed twice.
-  for (const attribute of merged) consumed.add(attribute.line);
+  // Claim every attribute of the group by POSITION, so a second cfg group that
+  // shares a line (`#[cfg(a)] fn f() {} #[cfg(b)] …`) is still processed and a
+  // rejected semicolon item does not consume the line for its neighbour.
+  for (const attribute of merged) consumed.add(attrKey(attribute));
 
   if (!ITEM_HEAD.test(itemHead)) return undefined;
 
@@ -127,12 +149,15 @@ function pairOne(
   const candidates = index.opensByDepth.get(depth);
   if (!candidates) return undefined;
 
-  // First `{` at the item's own depth on/after the item line, within the window.
+  // First `{` at the item's own depth on/after the item's start, within the
+  // window. Same-line items need the column bound too, otherwise the preceding
+  // `{` of an earlier same-line item is picked.
   let low = 0;
   let high = candidates.length;
   while (low < high) {
     const mid = (low + high) >> 1;
-    if (brackets[candidates[mid]].line < itemLine) low = mid + 1;
+    const brace = brackets[candidates[mid]];
+    if (brace.line < itemLine || (brace.line === itemLine && brace.col < itemCol)) low = mid + 1;
     else high = mid;
   }
 
@@ -146,14 +171,21 @@ function pairOne(
 
     // A top-level `;` before the opening brace ends a semicolon-terminated item
     // (`use a::b;`, `const X: i32 = 1;`; the depth guard keeps `[u8; N]`).
-    if (hasTopLevelSemicolon(lines, itemLine, open)) return undefined;
+    if (hasTopLevelSemicolon(lines, itemLine, itemCol, open)) return undefined;
 
     const pair = byOpenOffset.get(open.offset);
     if (!pair || pair.close.line > limit) return undefined;
 
+    const attrLines = merged.map((attribute) => attribute.line);
+    const lastCfg = attrLines[attrLines.length - 1];
+    const headStart = leadingHeadStart(lines, first.line);
+    const headLines: number[] = [];
+    for (let head = headStart; head <= lastCfg; head++) headLines.push(head);
+
     return {
       attrLine: first.line,
-      attrLines: merged.map((attribute) => attribute.line),
+      attrLines,
+      headLines,
       displays: merged.map((attribute) => attribute.display),
       endLine: pair.close.line,
     };
@@ -163,21 +195,25 @@ function pairOne(
 }
 
 /**
- * True when a `;` sits at bracket depth 0 anywhere from `itemLine` up to (but not
- * including) the opening brace `open`. `(`/`[`/`{` raise the depth and their
- * closers lower it, so `fn f(a: [u8; 4]) {}` and `fn f<const N: usize>() {}`
- * stay guarded as items while `const X: i32 = 1;` does not.
+ * True when a `;` sits at bracket depth 0 anywhere from the item's start
+ * (`itemLine`/`itemCol`) up to (but not including) the opening brace `open`.
+ * `(`/`[`/`{` raise the depth and their closers lower it, so `fn f(a: [u8; 4]) {}`
+ * and `fn f<const N: usize>() {}` stay guarded as items while
+ * `const X: i32 = 1;` does not. Starting at `itemCol` keeps a preceding
+ * same-line item (`use a::b; #[cfg(x)] fn f() {}`) from rejecting its neighbour.
  */
 function hasTopLevelSemicolon(
   lines: readonly string[],
   itemLine: number,
+  itemCol: number,
   open: BracketToken
 ): boolean {
   let depth = 0;
   for (let line = itemLine; line <= open.line; line++) {
     const text = lines[line] ?? '';
     const end = line === open.line ? open.col : text.length;
-    for (let index = 0; index < end; index++) {
+    const start = line === itemLine ? itemCol : 0;
+    for (let index = start; index < end; index++) {
       const ch = text[index];
       if (ch === '(' || ch === '[' || ch === '{') depth++;
       else if (ch === ')' || ch === ']' || ch === '}') {
@@ -228,6 +264,13 @@ function findAttributeClose(
         col = end.col;
         jumped = true;
         break;
+      }
+      if (ch === '/' && text[col + 1] === '/') {
+        // A `]` inside a line comment must not close the attribute either
+        // (`#[cfg(all(unix, // note ] here\n    windows))]`): jump to the
+        // newline and keep scanning on the next line.
+        col = text.length;
+        continue;
       }
       if (ch === '[') {
         depth++;
@@ -402,14 +445,134 @@ function skipStringInLine(text: string, col: number): number {
   return text.length;
 }
 
-/** True when only whitespace precedes the attribute on its line. */
-function isFirstOnLine(attr: CfgAttributeToken, lines: readonly string[]): boolean {
-  return (lines[attr.line] ?? '').slice(0, attr.col).trim() === '';
+/**
+ * True when the attribute is a leading attribute: only whitespace precedes it on
+ * its line, or it directly follows a complete item on the same line
+ * (`#[cfg(a)] fn f() {} #[cfg(b)] fn g() {}`). An attribute nested in brackets
+ * — a parameter, struct field or match arm — is not leading.
+ */
+function isLeadingAttribute(attr: CfgAttributeToken, lines: readonly string[]): boolean {
+  const prefix = (lines[attr.line] ?? '').slice(0, attr.col);
+  if (prefix.trim() === '') return true;
+
+  let depth = 0;
+  let lastCode = '';
+  for (const ch of prefix) {
+    if (ch === '(' || ch === '[' || ch === '{') {
+      depth++;
+      lastCode = ch;
+    } else if (ch === ')' || ch === ']' || ch === '}') {
+      if (depth > 0) depth--;
+      lastCode = ch;
+    } else if (ch !== ' ' && ch !== '\t') {
+      lastCode = ch;
+    }
+  }
+  return depth === 0 && (lastCode === '}' || lastCode === ';' || lastCode === ']');
 }
 
 /** True for `#[` / `#![` at the start of an already-trimmed string. */
 function isAttributeStart(trimmed: string): boolean {
   return trimmed.startsWith('#[') || trimmed.startsWith('#![');
+}
+
+/** Stable key for one attribute token (line + column; line alone is not unique). */
+function attrKey(attr: CfgAttributeToken): string {
+  return `${attr.line}:${attr.col}`;
+}
+
+/**
+ * True when the bracket token at `tokenIndex` opens a macro definition's body:
+ * the code ending at the token is a `macro_rules!` / `macro` head (same line, or
+ * the nearest preceding non-blank, non-comment, non-attribute line). This makes
+ * the exclusion independent of where the delimiter sits.
+ */
+function isMacroBodyOpener(
+  brackets: readonly BracketToken[],
+  tokenIndex: number,
+  lines: readonly string[]
+): boolean {
+  const token = brackets[tokenIndex];
+  if (!OPENERS.has(token.char)) return false;
+
+  const sameLine = (lines[token.line] ?? '').slice(0, token.col).trimEnd();
+  if (MACRO_HEAD_TAIL.test(sameLine)) return true;
+
+  for (let line = token.line - 1; line >= 0; line--) {
+    const trimmed = (lines[line] ?? '').trim();
+    if (trimmed === '') continue;
+    if (
+      trimmed.startsWith('//') ||
+      trimmed.startsWith('*') ||
+      trimmed.startsWith('/*') ||
+      trimmed.startsWith('#[') ||
+      trimmed.startsWith('#![')
+    ) {
+      continue;
+    }
+    return MACRO_HEAD_TAIL.test(trimmed);
+  }
+  return false;
+}
+
+/**
+ * Start line of the item's leading attribute/doc-comment block, walking up from
+ * `firstLine`. Continuation lines of a multi-line attribute or block doc comment
+ * are absorbed too, but only when the walk actually reaches an attribute/doc
+ * start, so unrelated code above is never pulled in.
+ */
+function leadingHeadStart(lines: readonly string[], firstLine: number): number {
+  let start = firstLine;
+  for (let line = firstLine - 1; line >= 0; line--) {
+    const trimmed = (lines[line] ?? '').trim();
+    if (trimmed === '') break;
+    if (HEAD_LINE_START.test(trimmed)) {
+      start = line;
+      continue;
+    }
+    if (isHeadContinuation(lines, line, firstLine)) {
+      start = line;
+      continue;
+    }
+    break;
+  }
+
+  if (start !== firstLine && !HEAD_LINE_START.test((lines[start] ?? '').trim())) {
+    return firstLine;
+  }
+  return start;
+}
+
+/**
+ * True when `line` is inside a multi-line attribute or block doc comment that is
+ * still open in the region `[line, firstLine)`: more attribute `]` than `[`, or
+ * more block-comment `*/` than `/*`. Walking the region is cheap (leading blocks
+ * are short).
+ */
+function isHeadContinuation(
+  lines: readonly string[],
+  line: number,
+  firstLine: number
+): boolean {
+  let attr = 0;
+  let block = 0;
+  for (let l = firstLine - 1; l >= line; l--) {
+    const text = lines[l] ?? '';
+    attr += countOccurrences(text, ']') - countOccurrences(text, '[');
+    block += countOccurrences(text, '*/') - countOccurrences(text, '/*');
+  }
+  return attr > 0 || block > 0;
+}
+
+function countOccurrences(text: string, needle: string): number {
+  let count = 0;
+  let from = 0;
+  for (;;) {
+    const at = text.indexOf(needle, from);
+    if (at < 0) return count;
+    count++;
+    from = at + needle.length;
+  }
 }
 
 /**
@@ -429,12 +592,22 @@ interface BracketIndex {
 
 function buildBracketIndex(
   brackets: readonly BracketToken[],
-  lines: readonly string[]
+  lines: readonly string[],
+  byOpenOffset: Map<number, { open: BracketToken; close: BracketToken }>
 ): BracketIndex {
   const count = brackets.length;
   const braceDepthBefore = new Int32Array(count + 1);
   const macroCountBefore = new Int32Array(count + 1);
   const opensByDepth = new Map<number, number[]>();
+
+  // A macro body's delimiter may be `(`, `[` or `{`, and may not share a line
+  // with the `macro_rules!`/`macro` head; detect the opener structurally.
+  const macroOpenerOffsets = new Set<number>();
+  for (let i = 0; i < count; i++) {
+    if (!isMacroBodyOpener(brackets, i, lines)) continue;
+    if (byOpenOffset.has(brackets[i].offset)) macroOpenerOffsets.add(brackets[i].offset);
+  }
+
   const macroStack: boolean[] = [];
   let depth = 0;
   let macroCount = 0;
@@ -444,16 +617,19 @@ function buildBracketIndex(
     macroCountBefore[i] = macroCount;
     const token = brackets[i];
 
-    if (token.char === '{') {
-      const macro = MACRO_BODY_LINE.test(lines[token.line] ?? '');
+    if (OPENERS.has(token.char)) {
+      const macro = macroOpenerOffsets.has(token.offset);
       macroStack.push(macro);
       if (macro) macroCount++;
-      const bucket = opensByDepth.get(depth);
-      if (bucket) bucket.push(i);
-      else opensByDepth.set(depth, [i]);
-      depth++;
-    } else if (token.char === '}') {
-      depth--;
+      if (token.char === '{') {
+        const bucket = opensByDepth.get(depth);
+        if (bucket) bucket.push(i);
+        else opensByDepth.set(depth, [i]);
+        depth++;
+      }
+    } else {
+      if (token.char === '}') depth--;
+      // The matched opener says whether this closer closes a macro body.
       if (macroStack.pop()) macroCount--;
     }
   }

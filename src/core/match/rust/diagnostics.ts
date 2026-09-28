@@ -69,8 +69,11 @@ export function applyMergedInactivity(
 export interface RustInactiveMergeInput {
   /** Lines the lexical model decided inactive. */
   lexicalLines: ReadonlySet<number>;
-  /** The cfg-ATTRIBUTE lines of spans whose predicate is FULLY decided by explicit `shigan.rust.cfg`. */
-  explicitAttributeLines: ReadonlySet<number>;
+  /**
+   * The leading attribute/doc-comment lines (`CfgItemSpan.headLines`) of spans
+   * whose predicate is FULLY decided by explicit `shigan.rust.cfg`.
+   */
+  explicitHeadLines: ReadonlySet<number>;
   /** Of those spans, every line the explicit model says is inactive. */
   explicitInactiveLines: ReadonlySet<number>;
   /** rust-analyzer's inactive-code ranges. */
@@ -87,14 +90,15 @@ export interface RustInactiveMergeInput {
  * *replace* the lexical negatives (never union), because a missing diagnostic
  * for an unknown predicate does not mean the code is live. A diagnostic is
  * suppressed — the user's explicit `shigan.rust.cfg` intent wins — only when its
- * START line is a cfg-attribute line of an explicitly-decided span; a nested
- * range inside such a span survives. The explicitly-decided spans' own inactive
- * lines are always added back. Without an authoritative source we can only
- * widen the lexical result with whatever diagnostics we did see.
+ * START line is a head line (leading attribute/doc-comment line) of an
+ * explicitly-decided span; a nested range starting later inside such a span
+ * survives. The explicitly-decided spans' own inactive lines are always added
+ * back. Without an authoritative source we can only widen the lexical result
+ * with whatever diagnostics we did see.
  */
 export function mergeRustInactiveLines(input: RustInactiveMergeInput): Set<number> {
   const keptDiagnostics = input.diagnostics.filter(
-    (range) => !input.explicitAttributeLines.has(range.startLine)
+    (range) => !input.explicitHeadLines.has(range.startLine)
   );
   const fromDiagnostics = inactiveLinesFromRanges(keptDiagnostics, input.lineCount);
 

@@ -69,7 +69,7 @@ describe('mergeRustInactiveLines', () => {
   it('authoritative: diagnostics replace lexical negatives, explicit spans win', () => {
     const result = mergeRustInactiveLines({
       lexicalLines: new Set([0, 1, 2, 3]),
-      explicitAttributeLines: new Set([10]),
+      explicitHeadLines: new Set([10]),
       explicitInactiveLines: new Set([10, 11]),
       diagnostics: [range(1, 1), range(10, 11), range(20, 21)],
       authoritative: true,
@@ -82,7 +82,7 @@ describe('mergeRustInactiveLines', () => {
   it('authoritative: an active explicit span suppresses its diagnostic', () => {
     const result = mergeRustInactiveLines({
       lexicalLines: new Set([10, 11]),
-      explicitAttributeLines: new Set([10]),
+      explicitHeadLines: new Set([10]),
       explicitInactiveLines: new Set(),
       diagnostics: [range(10, 11)],
       authoritative: true,
@@ -95,7 +95,7 @@ describe('mergeRustInactiveLines', () => {
   it('authoritative: a nested range inside an explicit span survives', () => {
     const result = mergeRustInactiveLines({
       lexicalLines: new Set<number>(),
-      explicitAttributeLines: new Set([0]),
+      explicitHeadLines: new Set([0]),
       explicitInactiveLines: new Set<number>(),
       // The outer explicit item's diagnostic starts on the attribute line and is
       // suppressed; the nested item's range starts elsewhere and is kept.
@@ -107,10 +107,39 @@ describe('mergeRustInactiveLines', () => {
     expect(sorted(result)).toEqual([2, 3]);
   });
 
+  it('authoritative: a doc-comment prefix suppresses the whole diagnostic', () => {
+    // rust-analyzer's inactive-code range starts at the gated item's FIRST
+    // attribute/doc line (`/// docs` on line 0), not at the `#[cfg]` on line 1.
+    const result = mergeRustInactiveLines({
+      lexicalLines: new Set<number>(),
+      explicitHeadLines: new Set([0, 1]),
+      explicitInactiveLines: new Set<number>(),
+      diagnostics: [range(0, 2)],
+      authoritative: true,
+      lineCount: 10,
+    });
+
+    expect(sorted(result)).toEqual([]);
+  });
+
+  it('authoritative: a head-only set would not suppress the prefixed range', () => {
+    // Regression guard for the fix: with only the cfg line the range survives.
+    const result = mergeRustInactiveLines({
+      lexicalLines: new Set<number>(),
+      explicitHeadLines: new Set([1]),
+      explicitInactiveLines: new Set<number>(),
+      diagnostics: [range(0, 2)],
+      authoritative: true,
+      lineCount: 10,
+    });
+
+    expect(sorted(result)).toEqual([0, 1, 2]);
+  });
+
   it('authoritative without diagnostics uses only explicit inactive spans', () => {
     const result = mergeRustInactiveLines({
       lexicalLines: new Set([0, 1, 2]),
-      explicitAttributeLines: new Set([1]),
+      explicitHeadLines: new Set([1]),
       explicitInactiveLines: new Set([2]),
       diagnostics: [],
       authoritative: true,
@@ -123,7 +152,7 @@ describe('mergeRustInactiveLines', () => {
   it('non-authoritative: widens the lexical result with diagnostics', () => {
     const result = mergeRustInactiveLines({
       lexicalLines: new Set([0, 1]),
-      explicitAttributeLines: new Set([1]),
+      explicitHeadLines: new Set([1]),
       explicitInactiveLines: new Set([2]),
       diagnostics: [range(1, 2), range(4, 4)],
       authoritative: false,
@@ -162,7 +191,20 @@ describe('explicitDecidedSpans', () => {
     };
 
     expect(explicitDecidedSpans(input)).toEqual([
-      { attrLine: 0, attrLines: [0], endLine: 2, inactive: true },
+      { attrLine: 0, attrLines: [0], headLines: [0], endLine: 2, inactive: true },
+    ]);
+  });
+
+  it('carries the leading doc-comment lines in headLines', () => {
+    const text = '/// docs\n#[cfg(unix)]\nfn a() {\n}\n';
+    const input = {
+      scanned: scanRust(text),
+      lines: text.split('\n'),
+      environment: { explicit: parseRustCfgEntries(['-unix']) },
+    };
+
+    expect(explicitDecidedSpans(input)).toEqual([
+      { attrLine: 1, attrLines: [1], headLines: [0, 1], endLine: 3, inactive: true },
     ]);
   });
 
@@ -175,7 +217,7 @@ describe('explicitDecidedSpans', () => {
     };
 
     expect(explicitDecidedSpans(input)).toEqual([
-      { attrLine: 0, attrLines: [0], endLine: 2, inactive: false },
+      { attrLine: 0, attrLines: [0], headLines: [0], endLine: 2, inactive: false },
     ]);
   });
 

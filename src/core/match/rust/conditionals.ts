@@ -92,6 +92,7 @@ function spanValue(span: CfgItemSpan, environment: RustCfgEnvironment): boolean 
 export function explicitDecidedSpans(input: RustConditionalInput): Array<{
   attrLine: number;
   attrLines: readonly number[];
+  headLines: readonly number[];
   endLine: number;
   inactive: boolean;
 }> {
@@ -99,6 +100,7 @@ export function explicitDecidedSpans(input: RustConditionalInput): Array<{
   const decided: Array<{
     attrLine: number;
     attrLines: readonly number[];
+    headLines: readonly number[];
     endLine: number;
     inactive: boolean;
   }> = [];
@@ -109,6 +111,7 @@ export function explicitDecidedSpans(input: RustConditionalInput): Array<{
       decided.push({
         attrLine: span.attrLine,
         attrLines: span.attrLines,
+        headLines: span.headLines,
         endLine: span.endLine,
         inactive: value === false,
       });
