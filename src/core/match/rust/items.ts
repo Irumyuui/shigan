@@ -48,13 +48,27 @@ export function pairCfgItems(scanned: ScanResult, lines: readonly string[]): Cfg
   const cfgByLine = new Map<number, CfgAttributeToken>();
   for (const attr of cfgs) if (!cfgByLine.has(attr.line)) cfgByLine.set(attr.line, attr);
 
+  // Every outer cfg attribute by position, so a same-line sibling can be merged.
+  const cfgByPos = new Map<string, CfgAttributeToken>();
+  for (const attr of scanned.cfgs ?? []) {
+    if (attr.name === 'cfg' && !attr.inner) cfgByPos.set(`${attr.line}:${attr.col}`, attr);
+  }
+
   const pairs = matchBrackets(scanned.brackets);
   const consumed = new Set<number>();
   const spans: CfgItemSpan[] = [];
 
   for (const attr of cfgs) {
     if (consumed.has(attr.line)) continue;
-    const span = pairOne(attr, cfgByLine, consumed, scanned.brackets, pairs.byOpenOffset, lines);
+    const span = pairOne(
+      attr,
+      cfgByLine,
+      cfgByPos,
+      consumed,
+      scanned.brackets,
+      pairs.byOpenOffset,
+      lines
+    );
     if (span) spans.push(span);
   }
 
@@ -65,37 +79,71 @@ export function pairCfgItems(scanned: ScanResult, lines: readonly string[]): Cfg
 function pairOne(
   first: CfgAttributeToken,
   cfgByLine: Map<number, CfgAttributeToken>,
+  cfgByPos: Map<string, CfgAttributeToken>,
   consumed: Set<number>,
   brackets: readonly BracketToken[],
   byOpenOffset: Map<number, { open: BracketToken; close: BracketToken }>,
   lines: readonly string[]
 ): CfgItemSpan | undefined {
   const limit = first.line + MAX_LOOKAHEAD;
-  const merged: CfgAttributeToken[] = [first];
-  let line = first.endLine + 1;
+  const merged: CfgAttributeToken[] = [];
   let itemLine = -1;
+  let itemHead = '';
 
-  while (line <= limit) {
-    const text = lines[line] ?? '';
-    const trimmed = text.trim();
+  let current: CfgAttributeToken | undefined = first;
 
-    if (trimmed === '' || isCommentLine(trimmed)) {
-      line++;
-      continue;
-    }
-    if (isAttributeLine(trimmed)) {
-      const attribute = cfgByLine.get(line);
-      if (attribute && !consumed.has(line)) {
-        merged.push(attribute);
-        line = attribute.endLine + 1;
-      } else {
-        line++;
+  while (current) {
+    merged.push(current);
+
+    const close = findAttributeClose(lines, current);
+    if (!close) return undefined;
+    const rest = (lines[close.line] ?? '').slice(close.col);
+    const restTrim = rest.trim();
+
+    if (restTrim !== '' && !isCommentLine(restTrim)) {
+      if (isAttributeLine(restTrim)) {
+        // Another attribute on the same line: merge it and re-examine its tail.
+        const nextCol = close.col + rest.indexOf('#');
+        const next = cfgByPos.get(`${close.line}:${nextCol}`);
+        if (!next || next.offset <= current.offset || consumed.has(next.line)) return undefined;
+        current = next;
+        continue;
       }
-      continue;
+      // Non-empty tail after `]` is the item head, on the same line.
+      itemLine = close.line;
+      itemHead = restTrim;
+      break;
     }
 
-    itemLine = line;
-    break;
+    // No usable same-line tail: take the first non-blank/comment/attribute line.
+    let line = close.line + 1;
+    let attribute: CfgAttributeToken | undefined;
+    while (line <= limit) {
+      const trimmed = (lines[line] ?? '').trim();
+      if (trimmed === '' || isCommentLine(trimmed)) {
+        line++;
+        continue;
+      }
+      if (isAttributeLine(trimmed)) {
+        const candidate = cfgByLine.get(line);
+        if (candidate && !consumed.has(candidate.line)) {
+          attribute = candidate;
+          break;
+        }
+        line++;
+        continue;
+      }
+      itemLine = line;
+      itemHead = trimmed;
+      break;
+    }
+
+    if (itemLine >= 0) break;
+    if (attribute) {
+      current = attribute;
+      continue;
+    }
+    return undefined;
   }
 
   if (itemLine < 0) return undefined;
@@ -103,22 +151,22 @@ function pairOne(
   // Claim every attribute of the group, found or not, so none is processed twice.
   for (const attribute of merged) consumed.add(attribute.line);
 
-  if (!ITEM_HEAD.test((lines[itemLine] ?? '').trim())) return undefined;
+  if (!ITEM_HEAD.test(itemHead)) return undefined;
 
   const depth = braceDepthBefore(brackets, first.offset);
 
   // First `{` at the item's own depth, on/after the item line and in the window.
   let open: BracketToken | undefined;
-  let current = 0;
+  let currentDepth = 0;
   for (const token of brackets) {
     if (token.char === '{') {
-      if (current === depth && token.line >= itemLine && token.line <= limit) {
+      if (currentDepth === depth && token.line >= itemLine && token.line <= limit) {
         open = token;
         break;
       }
-      current++;
+      currentDepth++;
     } else if (token.char === '}') {
-      current--;
+      currentDepth--;
     }
   }
   if (!open) return undefined;
@@ -139,6 +187,54 @@ function pairOne(
     displays: merged.map((attribute) => attribute.display),
     endLine: pair.close.line,
   };
+}
+
+/**
+ * Position just after the `]` that closes the attribute starting at `attr`
+ * (which may span several lines). Strings are skipped so a `]` inside a cfg
+ * value cannot close it early.
+ */
+function findAttributeClose(
+  lines: readonly string[],
+  attr: CfgAttributeToken
+): { line: number; col: number } | undefined {
+  let line = attr.line;
+  let col = attr.col;
+  let depth = 0;
+  let opened = false;
+
+  while (line < lines.length) {
+    const text = lines[line] ?? '';
+    while (col < text.length) {
+      const ch = text[col];
+      if (ch === '"') {
+        col++;
+        while (col < text.length && text[col] !== '"') {
+          if (text[col] === '\\') col++;
+          col++;
+        }
+        if (col < text.length) col++; // step past the closing quote
+        continue;
+      }
+      if (ch === '[') {
+        depth++;
+        opened = true;
+        col++;
+        continue;
+      }
+      if (ch === ']') {
+        depth--;
+        col++;
+        if (opened && depth === 0) return { line, col };
+        continue;
+      }
+      col++;
+    }
+    line++;
+    col = 0;
+  }
+
+  return undefined;
 }
 
 /** True when only whitespace precedes the attribute on its line. */

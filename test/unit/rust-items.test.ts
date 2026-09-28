@@ -138,3 +138,33 @@ describe('pairCfgItems (merged attributes)', () => {
     ]);
   });
 });
+
+describe('pairCfgItems (same-line items)', () => {
+  it('spans an item on the attribute line', () => {
+    expect(spansFor('#[cfg(unix)] fn f() {}\n')).toEqual([
+      { attrLine: 0, attrLines: [0], displays: ['#[cfg(unix)]'], endLine: 0 },
+    ]);
+  });
+
+  it('spans a same-line mod item', () => {
+    expect(spansFor('#[cfg(test)] mod tests {}\n')).toEqual([
+      { attrLine: 0, attrLines: [0], displays: ['#[cfg(test)]'], endLine: 0 },
+    ]);
+  });
+
+  it('merges attributes that share the attribute line', () => {
+    expect(spansFor('#[cfg(unix)] #[cfg(feature = "a")] fn f() {}\n')).toEqual([
+      {
+        attrLine: 0,
+        attrLines: [0, 0],
+        displays: ['#[cfg(unix)]', '#[cfg(feature = "a")]'],
+        endLine: 0,
+      },
+    ]);
+  });
+
+  it('keeps the semicolon guard for same-line items', () => {
+    expect(spansFor('#[cfg(unix)] struct S;\n')).toEqual([]);
+    expect(spansFor('#[cfg(unix)] use a::b; fn g() {}\n')).toEqual([]);
+  });
+});
