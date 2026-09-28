@@ -417,6 +417,89 @@ suite('Shigan C# project watching', () => {
   });
 });
 
+const MULTIROOT_NAME = 'shigan-multiroot';
+
+/**
+ * Multi-root watcher coverage. `updateWorkspaceFolders` restarts the extension
+ * host when the FIRST folder changes or when a single-folder workspace turns
+ * multi-root, and a restart kills this in-host run. The harness therefore starts
+ * multi-root (see `.vscode-test.mjs`) and this suite only adds/removes a
+ * NON-first sibling folder, which VS Code applies without a restart. Do not
+ * "simplify" this into a single-folder run later.
+ *
+ * The point: with the folder added at runtime, the extension's
+ * `onDidChangeWorkspaceFolders` handler must re-run `disposeCsprojWatchers()` +
+ * `watchCsprojFiles()`; otherwise nothing watches the new root and the rewrite
+ * below would never invalidate the csproj cache.
+ */
+suite('Shigan C# project watching (multi-root)', () => {
+  let multirootDir = '';
+
+  suiteSetup(async () => {
+    const folders = vscode.workspace.workspaceFolders;
+    assert.ok(folders && folders.length >= 2, 'the host must start multi-root for this suite');
+
+    // Sibling of the primary workspace folder: VS Code refuses nested folders.
+    multirootDir = join(folders[0].uri.fsPath, '..', 'workspace-multiroot');
+    mkdirSync(multirootDir, { recursive: true });
+    writeFileSync(join(multirootDir, 'Multi.csproj'), WATCH_CSPROJ_DEBUG);
+    writeFileSync(join(multirootDir, 'multi.cs'), WATCH_PROBE);
+
+    const extension = vscode.extensions.getExtension('miyana-tobari.shigan');
+    if (extension && !extension.isActive) await extension.activate();
+
+    const added = vscode.workspace.updateWorkspaceFolders(folders.length, 0, {
+      uri: vscode.Uri.file(multirootDir),
+      name: MULTIROOT_NAME,
+    });
+    assert.strictEqual(added, true, 'adding a non-first workspace folder should be accepted');
+
+    await pollUntil(
+      () => (vscode.workspace.workspaceFolders?.length ?? 0) === folders.length + 1,
+      'the added workspace folder should appear'
+    );
+
+    await withWorkspaceWritable(async () => {
+      await applyBaseline();
+      await set('preprocessor.skipInactiveBrackets', false);
+    });
+  });
+
+  suiteTeardown(async () => {
+    // Must run even after a failing test: never leave the extra folder behind.
+    try {
+      if (multirootDir) {
+        const folders = vscode.workspace.workspaceFolders ?? [];
+        const index = folders.findIndex(
+          (folder) => folder.name === MULTIROOT_NAME || folder.uri.fsPath === multirootDir
+        );
+        // Never remove index 0: that would restart the host mid-run.
+        if (index > 0) {
+          const before = folders.length;
+          vscode.workspace.updateWorkspaceFolders(index, 1);
+          await pollUntil(
+            () => (vscode.workspace.workspaceFolders?.length ?? 0) === before - 1,
+            'the added workspace folder should be removed'
+          );
+        }
+      }
+    } finally {
+      if (multirootDir) rmSync(multirootDir, { recursive: true, force: true });
+      await withWorkspaceWritable(restoreWorkspaceSettings);
+    }
+  });
+
+  test('adding a workspace folder rebuilds the csproj watcher', async () => {
+    await set('preprocessor.skipInactiveBrackets', false);
+    await openFixture(multirootDir, 'multi.cs', 'csharp');
+    await waitForDebugBranch(false, 'DEBUG defined by Multi.csproj');
+
+    // Only a watcher covering the newly added root can observe this rewrite.
+    writeFileSync(join(multirootDir, 'Multi.csproj'), WATCH_CSPROJ_NO_DEBUG);
+    await waitForDebugBranch(true, 'DEBUG removed from Multi.csproj');
+  });
+});
+
 function waitForDebugBranch(inactive: boolean, label: string): Promise<ComputedHint[]> {
   return pollHints(
     (hints) => bracketAt(hints, WATCH_DEBUG_BODY_CLOSE)?.inactive === inactive,
@@ -446,4 +529,53 @@ async function pollHints(
     await delay(WATCH_POLL_INTERVAL_MS);
     hints = await computedHints();
   }
+}
+
+/**
+ * Polls a non-hint predicate (e.g. the workspace folder count) on the same
+ * 100 ms / 5 s cadence as {@link pollHints}: `updateWorkspaceFolders` is applied
+ * asynchronously, so a fixed delay would be racy.
+ */
+async function pollUntil(predicate: () => boolean, message: string): Promise<void> {
+  const deadline = Date.now() + WATCH_POLL_TIMEOUT_MS;
+  for (;;) {
+    if (predicate()) return;
+    if (Date.now() >= deadline) {
+      assert.fail(`${message} (waited ${WATCH_POLL_TIMEOUT_MS} ms)`);
+    }
+    await delay(WATCH_POLL_INTERVAL_MS);
+  }
+}
+
+/**
+ * Retries a workspace-settings write until it succeeds. Adding/removing a
+ * workspace folder edits the generated `.code-workspace` file, and for a short
+ * window afterwards VS Code rejects further settings writes with "Unable to
+ * write into workspace settings because the file has unsaved changes". Saving
+ * and retrying bridges that window; without it the dirty file would poison every
+ * later suite's `applyBaseline`.
+ */
+async function withWorkspaceWritable(action: () => Promise<void>): Promise<void> {
+  const deadline = Date.now() + WATCH_POLL_TIMEOUT_MS;
+  for (;;) {
+    try {
+      await action();
+      return;
+    } catch (error) {
+      if (Date.now() >= deadline) throw error;
+      console.log('[multi-root] workspace settings file was dirty; saved it and retrying');
+      await vscode.workspace.saveAll();
+      await delay(WATCH_POLL_INTERVAL_MS);
+    }
+  }
+}
+
+/** Restores touched settings, and proves the workspace file is writable again. */
+async function restoreWorkspaceSettings(): Promise<void> {
+  await restoreTouched();
+  // Force one real workspace-settings write even when no setting was touched,
+  // so a dirty `.code-workspace` file is detected (and retried) rather than left
+  // behind for the next suite.
+  const config = vscode.workspace.getConfiguration('shigan');
+  await config.update('enable', config.get('enable'), vscode.ConfigurationTarget.Workspace);
 }

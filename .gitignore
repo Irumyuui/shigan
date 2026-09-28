@@ -4,6 +4,9 @@ out/
 .vscode-test/
 test/integration/workspace/.vscode/
 test/integration/workspace/fixture/
+test/integration/shigan-test.code-workspace
+test/integration/workspace-secondary/
+test/integration/workspace-multiroot/
 *.vsix
 .vscode
 artifacts
