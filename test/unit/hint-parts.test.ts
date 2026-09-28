@@ -13,6 +13,11 @@ describe('hint-parts', () => {
     expect(segment(false, true, 0, 2, '#if X', 0)).toBe('#if X');
   });
 
+  it('omits the range when the endpoints are the same line', () => {
+    expect(segment(true, true, 3, 3, '#[cfg(x)]', 0)).toBe('#[cfg(x)]');
+    expect(segment(true, false, 3, 3, 'x', 0)).toBe('');
+  });
+
   it('shouldShowRange honours the threshold', () => {
     expect(shouldShowRange(true, 0, 0, 5)).toBe(true);
     expect(shouldShowRange(true, 2, 0, 2)).toBe(false);

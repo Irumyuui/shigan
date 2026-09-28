@@ -19,8 +19,10 @@ export function shouldShowRange(
 
 /**
  * Builds the body of a conditional hint segment: the `:start-end` range when
- * shown, then the display text (e.g. `#if X`) when labels are on. Returns an
- * empty string when both are off (the caller renders the bare marker then).
+ * shown and the two endpoints differ, then the display text (e.g. `#if X`) when
+ * labels are on. A segment whose `fromLine === toLine` is display-only (used by
+ * merged Rust `#[cfg]` spans). Returns an empty string when both parts are off
+ * (the caller renders the bare marker then).
  */
 export function segment(
   showRange: boolean,
@@ -31,7 +33,7 @@ export function segment(
   rangeHideThreshold: number
 ): string {
   const bits: string[] = [];
-  if (shouldShowRange(showRange, rangeHideThreshold, fromLine, toLine)) {
+  if (fromLine !== toLine && shouldShowRange(showRange, rangeHideThreshold, fromLine, toLine)) {
     bits.push(`:${fromLine + 1}-${toLine + 1}`);
   }
   if (showLabel) bits.push(display);
