@@ -5,6 +5,24 @@ All notable changes to Shigan are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- C++ support: `.cpp` files are scanned like C plus raw string literals (`R"(...)"`), and `-std=c++NN` defines `__cplusplus`.
+- C# support: `.cs` files treat verbatim (`@"..."`), interpolated (`$"..."`) and raw (`"""..."""`) string literals as opaque; a value-less `#define NAME` counts as defined, and `true`/`false` are valid `#if` operands.
+- C# conditional symbols come from the nearest `.csproj` / `Directory.Build.props` `DefineConstants` plus the implicit target-framework symbols, controlled by `shigan.csharp.inheritProject`, `shigan.csharp.configuration` and `shigan.csharp.targetFramework`.
+- `shigan.csharp.define` for extra C# preprocessor symbols.
+- C++ and C# golden fixtures, integration coverage and manual samples.
+
+### Changed
+
+- `shigan.languages` now defaults to `["c","cpp","csharp"]`, with matching `onLanguage:cpp` and `onLanguage:csharp` activation events.
+
+### Internal
+
+- Added a language profile seam (`src/core/language.ts`): the VSCode-free core takes a `LanguageSyntax` instead of assuming C.
+
 ## [0.0.3] - 2026-09-28
 
 ### Fixed
@@ -33,6 +51,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Settings for the trigger mode, active languages, hint ranges, labels and macro sources.
 - English, Simplified Chinese and Japanese UI localization.
 
-[Unreleased]: https://github.com/Irumyuui/shigan/compare/v0.0.2...HEAD
+[Unreleased]: https://github.com/Irumyuui/shigan/compare/v0.0.3...HEAD
 [0.0.2]: https://github.com/Irumyuui/shigan/releases/tag/v0.0.2
 [0.0.1]: https://github.com/Irumyuui/shigan/releases/tag/v0.0.1
