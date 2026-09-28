@@ -1,0 +1,65 @@
+[
+  {
+    "line": 3,
+    "text": " <- :1-4 struct Point",
+    "kind": "bracket",
+    "openLine": 0,
+    "closeLine": 3
+  },
+  {
+    "line": 8,
+    "text": " <- :7-9 fn new(x: i32, y: i32) -> Self",
+    "kind": "bracket",
+    "openLine": 6,
+    "closeLine": 8
+  },
+  {
+    "line": 12,
+    "text": " <- :11-13 if n > 0",
+    "kind": "bracket",
+    "openLine": 10,
+    "closeLine": 12
+  },
+  {
+    "line": 15,
+    "text": " <- :14-16 for i in 0..n",
+    "kind": "bracket",
+    "openLine": 13,
+    "closeLine": 15
+  },
+  {
+    "line": 17,
+    "text": " <- :10-18 fn step(&mut self, n: i32) -> i32",
+    "kind": "bracket",
+    "openLine": 9,
+    "closeLine": 17
+  },
+  {
+    "line": 18,
+    "text": " <- :6-19 impl Point",
+    "kind": "bracket",
+    "openLine": 5,
+    "closeLine": 18
+  },
+  {
+    "line": 23,
+    "text": " <- :22-24 fn clone(&self) -> Self",
+    "kind": "bracket",
+    "openLine": 21,
+    "closeLine": 23
+  },
+  {
+    "line": 24,
+    "text": " <- :21-25 where T: Copy",
+    "kind": "bracket",
+    "openLine": 20,
+    "closeLine": 24
+  },
+  {
+    "line": 27,
+    "text": " <- :26-28 mod geometry",
+    "kind": "bracket",
+    "openLine": 25,
+    "closeLine": 27
+  }
+]

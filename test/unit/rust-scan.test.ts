@@ -227,6 +227,98 @@ describe('rust control flow', () => {
   });
 });
 
+describe('rust impl and definition blocks', () => {
+  it('scans an impl body and its method braces', () => {
+    const b = scanRust('impl Foo { fn a(&self) { } fn b() -> u8 { 0 } }').brackets;
+    expect(b.map((x) => x.char).join('')).toBe('{(){}(){}}');
+    expect(b).toEqual([
+      { char: '{', offset: 9, line: 0, col: 9 },
+      { char: '(', offset: 15, line: 0, col: 15 },
+      { char: ')', offset: 21, line: 0, col: 21 },
+      { char: '{', offset: 23, line: 0, col: 23 },
+      { char: '}', offset: 25, line: 0, col: 25 },
+      { char: '(', offset: 31, line: 0, col: 31 },
+      { char: ')', offset: 32, line: 0, col: 32 },
+      { char: '{', offset: 40, line: 0, col: 40 },
+      { char: '}', offset: 44, line: 0, col: 44 },
+      { char: '}', offset: 46, line: 0, col: 46 },
+    ]);
+  });
+
+  it('scans a generic impl with a where clause across lines', () => {
+    const b = scanRust('impl<T: Trait> Foo<T>\nwhere T: Debug {\n    fn x(&self) { }\n}').brackets;
+    expect(b.map((x) => x.char).join('')).toBe('{(){}}');
+    expect(b.map((x) => [x.char, x.line, x.col])).toEqual([
+      ['{', 1, 15],
+      ['(', 2, 8],
+      [')', 2, 14],
+      ['{', 2, 16],
+      ['}', 2, 18],
+      ['}', 3, 0],
+    ]);
+  });
+
+  it('scans a trait impl head', () => {
+    const b = scanRust('impl Trait for Foo { fn f(&self) {} }').brackets;
+    expect(b.map((x) => x.char).join('')).toBe('{(){}}');
+    expect(b[0]).toMatchObject({ offset: 19, line: 0, col: 19 });
+  });
+
+  it('scans a lifetime in an impl head', () => {
+    expect(chars("impl<'a> Foo<'a> { fn f(&'a self) {} }")).toBe('{(){}}');
+  });
+
+  it('scans nested control flow inside a method body', () => {
+    const b = scanRust('impl Foo { fn f(&self) { if x { } for i in 0..1 { } while y { } } }').brackets;
+    expect(b.map((x) => x.char).join('')).toBe('{(){{}{}{}}}');
+    expect(b.map((x) => [x.char, x.col])).toEqual([
+      ['{', 9],
+      ['(', 15],
+      [')', 21],
+      ['{', 23],
+      ['{', 30],
+      ['}', 32],
+      ['{', 48],
+      ['}', 50],
+      ['{', 60],
+      ['}', 62],
+      ['}', 64],
+      ['}', 66],
+    ]);
+  });
+
+  it('scans struct, enum, trait and mod blocks', () => {
+    expect(chars('struct S { a: u8 }')).toBe('{}');
+    expect(chars('enum E { A, B }')).toBe('{}');
+    expect(chars('trait T { fn f(&self); }')).toBe('{()}');
+    expect(chars('mod m { }')).toBe('{}');
+  });
+
+  it('scans an impl block containing a labeled loop', () => {
+    const b = scanRust(
+      "impl Foo {\n    fn run(&self) {\n        'outer: for x in xs {\n            continue 'outer;\n        }\n    }\n}"
+    ).brackets;
+    expect(b.map((x) => x.char).join('')).toBe('{(){{}}}');
+    expect(b.map((x) => [x.char, x.line, x.col])).toEqual([
+      ['{', 0, 9],
+      ['(', 1, 10],
+      [')', 1, 16],
+      ['{', 1, 18],
+      ['{', 2, 28],
+      ['}', 4, 8],
+      ['}', 5, 4],
+      ['}', 6, 0],
+    ]);
+  });
+
+  it('records no cfgs for impl or definition blocks', () => {
+    expect(cfgs('impl Foo { fn f(&self) {} }')).toEqual([]);
+    expect(cfgs('impl<T: Trait> Foo<T> where T: Debug { fn x(&self) {} }')).toEqual([]);
+    expect(cfgs('trait T { fn f(&self); }')).toEqual([]);
+    expect(cfgs('mod m { }')).toEqual([]);
+  });
+});
+
 describe('rust shebang, shape and the C scanner', () => {
   it('skips a shebang line', () => {
     expect(chars('#!/usr/bin/env rust\nfn main() {}\n')).toBe('(){}');
