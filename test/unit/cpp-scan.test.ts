@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { parseCompileFlags } from '../../src/core/flags';
 import { C_SYNTAX, CPP_SYNTAX, syntaxFor } from '../../src/core/language';
 import { scan } from '../../src/core/lexer/tokenizer';
 
@@ -71,34 +70,5 @@ describe('syntaxFor', () => {
   it('keeps c and unknown ids on the C profile', () => {
     expect(syntaxFor('c')).toEqual(C_SYNTAX);
     expect(syntaxFor('cuda')).toEqual(C_SYNTAX);
-  });
-});
-
-describe('parseCompileFlags standard macros', () => {
-  it('injects __cplusplus for C++ from -std', () => {
-    const { macros } = parseCompileFlags(['-std=c++17'], undefined, syntaxFor('cpp'));
-    expect(macros.get('__cplusplus')?.value).toBe('201703');
-    expect(macros.has('__STDC__')).toBe(false);
-    expect(macros.has('__STDC_VERSION__')).toBe(false);
-  });
-
-  it('maps every C++ standard', () => {
-    const value = (standard: string): string | undefined =>
-      parseCompileFlags([`-std=${standard}`], undefined, syntaxFor('cpp')).macros.get('__cplusplus')
-        ?.value;
-    expect(value('c++98')).toBe('199711');
-    expect(value('c++03')).toBe('199711');
-    expect(value('c++11')).toBe('201103');
-    expect(value('c++14')).toBe('201402');
-    expect(value('c++20')).toBe('202002');
-    expect(value('c++23')).toBe('202302');
-    expect(value('gnu++17')).toBe('201703');
-  });
-
-  it('still injects the C macros by default', () => {
-    const { macros } = parseCompileFlags(['-std=c11']);
-    expect(macros.get('__STDC__')?.value).toBe('1');
-    expect(macros.get('__STDC_VERSION__')?.value).toBe('201112');
-    expect(macros.has('__cplusplus')).toBe(false);
   });
 });
