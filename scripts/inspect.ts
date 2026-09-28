@@ -10,7 +10,7 @@ import { computeHints } from '../src/core/hints';
 import { syntaxFor } from '../src/core/language';
 import { scanRust } from '../src/core/lexer/rust';
 import { scan } from '../src/core/lexer/tokenizer';
-import { evaluateConditionals } from '../src/core/match/c-preprocessor';
+import { cConditionals, evaluateConditionals } from '../src/core/match/c-preprocessor';
 import { hostCfg, parseRustCfgEntries, RustCfgEnvironment } from '../src/core/match/rust/cfg';
 import { rustConditionals } from '../src/core/match/rust/conditionals';
 import { Hint, MacroDef } from '../src/core/types';
@@ -59,6 +59,10 @@ if (language === 'rust') {
     trackFileDefines: true,
     syntax,
   });
+  const conditionals = cConditionals(scanned.directives, {
+    branchActive: (line) => branchActive.get(line),
+    blockActive: (line) => blockActive.get(line),
+  });
 
   for (const kind of ['brackets', 'macros'] as const) {
     print(
@@ -70,9 +74,8 @@ if (language === 'rust') {
         showRange: true,
         showLabel: true,
         inactive: (line) => inactiveLines.has(line),
-        branchActive: (line) => branchActive.get(line),
-        blockActive: (line) => blockActive.get(line),
         scanned,
+        conditionals,
       })
     );
   }
@@ -82,7 +85,7 @@ function print(kind: 'brackets' | 'macros', hints: Hint[]): void {
   console.log(`\n=== ${kind} (${trigger}) — ${hints.length} hint(s) ===`);
   for (const hint of hints) {
     const source = (lines[hint.line] ?? '').trimEnd();
-    const jumps = (hint.parts ?? [])
+    const jumps = hint.parts
       .map((part) => part.target)
       .filter((target): target is { line: number; col: number } => target !== undefined)
       .map((target) => `line ${target.line + 1}`);

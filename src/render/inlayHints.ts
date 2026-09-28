@@ -69,7 +69,7 @@ function toInlayHint(
   const line = Math.min(Math.max(hint.line, 0), document.lineCount - 1);
   const position = document.lineAt(line).range.end;
 
-  const source = hint.parts ?? [{ text: hint.text, target: hint.target }];
+  const source = hint.parts;
   const labelParts = source.map((part, index) => {
     // The first segment is separated from the code by `paddingLeft`.
     let text = index === 0 ? part.text.trimStart() : part.text;

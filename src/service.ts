@@ -3,11 +3,11 @@ import { createVariableResolver, ShiganConfig } from './config';
 import { isRealFileScheme } from './core/document-paths';
 import { mergeCSharpMacros } from './core/csharp';
 import { parseCompileFlags } from './core/flags';
-import { computeHints } from './core/hints';
+import { computeHints, HintOptions } from './core/hints';
 import { languageKind, LanguageSyntax, syntaxFor } from './core/language';
 import { scanRust } from './core/lexer/rust';
 import { scan } from './core/lexer/tokenizer';
-import { evaluateConditionals } from './core/match/c-preprocessor';
+import { cConditionals, evaluateConditionals } from './core/match/c-preprocessor';
 import { hostCfg, parseRustCfgEntries, RustCfgEnvironment } from './core/match/rust/cfg';
 import { explicitDecidedSpans, rustConditionals } from './core/match/rust/conditionals';
 import { applyMergedInactivity, mergeRustInactiveLines } from './core/match/rust/diagnostics';
@@ -81,11 +81,6 @@ export function noteRustDiagnosticsChanged(uris: readonly string[]): void {
     return;
   }
   for (const uri of uris) diagnosticsRevisions.set(uri, revisionOf(uri) + 1);
-}
-
-/** Clears the diagnostic revisions (tests / full invalidation). */
-export function resetRustDiagnosticsRevisions(): void {
-  diagnosticsRevisions.clear();
 }
 
 /** Drops every cache entry for one document; called when it is closed. */
@@ -172,88 +167,22 @@ export function computeDocumentHints(
   }
 
   const text = document.getText();
+  const display: HintOptions = {
+    brackets: config.show.includes('brackets'),
+    macros: config.show.includes('macros'),
+    trigger,
+    cursorOffset,
+    showRange: config.showRange,
+    rangeHideThreshold: config.rangeHideThreshold,
+    showLabel: config.showLabel,
+    skipInactiveBrackets: config.skipInactiveBrackets,
+    skipInactiveDirectives: config.skipInactiveDirectives,
+    markInactive: config.markInactive,
+  };
 
-  let hints: Hint[];
-  if (rust) {
-    const scanned = scanRust(text);
-    const lines = text.split(/\r?\n/);
-    const environment = rustEnvironment(document, config);
-    // Pair the cfg items once and share the result: both the lexical model and
-    // the explicit-decided spans would otherwise scan the same document twice.
-    const spans = pairCfgItems(scanned, lines);
-    const model = rustConditionals({ scanned, lines, environment, spans });
-
-    // rust-analyzer's diagnostics are authoritative when present (or when the
-    // extension is active); explicit `shigan.rust.cfg`-decided spans still win.
-    // With no explicit entries nothing can be explicitly decided, so skip it.
-    const decided =
-      environment.explicit && environment.explicit.size > 0
-        ? explicitDecidedSpans({ scanned, lines, environment, spans })
-        : [];
-    const explicitHeadLines = new Set(decided.flatMap((span) => span.headLines));
-    const explicitInactiveLines = new Set<number>();
-    for (const span of decided) {
-      if (!span.inactive) continue;
-      for (let line = span.attrLine; line <= span.endLine; line++) {
-        explicitInactiveLines.add(line);
-      }
-    }
-
-    const diagnostics = readRustDiagnostics(document);
-    const merged = mergeRustInactiveLines({
-      lexicalLines: model.inactiveLines ?? new Set<number>(),
-      explicitHeadLines,
-      explicitInactiveLines,
-      diagnostics: diagnostics.ranges,
-      authoritative: diagnostics.authoritative,
-      lineCount: lines.length,
-    });
-    // Re-derive the model flags from each hint's own attribute lines, so a span
-    // rust-analyzer calls inactive shows `(inactive)` even when the lexical
-    // model said active (and a nested inactive item cannot flip its parent).
-    const adjustedModel = applyMergedInactivity(model, merged);
-
-    hints = computeHints(text, {
-      brackets: config.show.includes('brackets'),
-      macros: config.show.includes('macros'),
-      trigger,
-      cursorOffset,
-      showRange: config.showRange,
-      rangeHideThreshold: config.rangeHideThreshold,
-      showLabel: config.showLabel,
-      inactive: (line) => merged.has(line),
-      skipInactiveBrackets: config.skipInactiveBrackets,
-      skipInactiveDirectives: config.skipInactiveDirectives,
-      markInactive: config.markInactive,
-      scanned,
-      conditionals: adjustedModel,
-    });
-  } else {
-    const syntax = syntaxFor(document.languageId);
-    const scanned = scan(text, syntax);
-    const macros = documentMacros(document, config, syntax);
-    const evaluation = evaluateConditionals(scanned.directives, {
-      macros,
-      trackFileDefines: config.trackFileDefines,
-      syntax,
-    });
-    hints = computeHints(text, {
-      brackets: config.show.includes('brackets'),
-      macros: config.show.includes('macros'),
-      trigger,
-      cursorOffset,
-      showRange: config.showRange,
-      rangeHideThreshold: config.rangeHideThreshold,
-      showLabel: config.showLabel,
-      inactive: (line) => evaluation.inactiveLines.has(line),
-      branchActive: (line) => evaluation.branchActive.get(line),
-      blockActive: (line) => evaluation.blockActive.get(line),
-      skipInactiveBrackets: config.skipInactiveBrackets,
-      skipInactiveDirectives: config.skipInactiveDirectives,
-      markInactive: config.markInactive,
-      scanned,
-    });
-  }
+  const hints = rust
+    ? rustDocumentHints(document, config, text, display)
+    : cFamilyDocumentHints(document, config, text, display);
 
   hintCache.set(key, {
     version: document.version,
@@ -265,6 +194,89 @@ export function computeDocumentHints(
     hints,
   });
   return hints;
+}
+
+/** Rust pipeline: `scanRust` + the `#[cfg]` model, merged with diagnostics. */
+function rustDocumentHints(
+  document: vscode.TextDocument,
+  config: ShiganConfig,
+  text: string,
+  display: HintOptions
+): Hint[] {
+  const scanned = scanRust(text);
+  const lines = text.split(/\r?\n/);
+  const environment = rustEnvironment(document, config);
+  // Pair the cfg items once and share the result: both the lexical model and
+  // the explicit-decided spans would otherwise scan the same document twice.
+  const spans = pairCfgItems(scanned, lines);
+  const model = rustConditionals({ scanned, lines, environment, spans });
+
+  // rust-analyzer's diagnostics are authoritative when present (or when the
+  // extension is active); explicit `shigan.rust.cfg`-decided spans still win.
+  // With no explicit entries nothing can be explicitly decided, so skip it.
+  const decided =
+    environment.explicit && environment.explicit.size > 0
+      ? explicitDecidedSpans({ scanned, lines, environment, spans })
+      : [];
+  const explicitHeadLines = new Set(decided.flatMap((span) => span.headLines));
+  const explicitInactiveLines = new Set<number>();
+  for (const span of decided) {
+    if (!span.inactive) continue;
+    for (let line = span.attrLine; line <= span.endLine; line++) {
+      explicitInactiveLines.add(line);
+    }
+  }
+
+  const diagnostics = readRustDiagnostics(document);
+  const merged = mergeRustInactiveLines({
+    lexicalLines: model.inactiveLines ?? new Set<number>(),
+    explicitHeadLines,
+    explicitInactiveLines,
+    diagnostics: diagnostics.ranges,
+    authoritative: diagnostics.authoritative,
+    lineCount: lines.length,
+  });
+  // Re-derive the model flags from each hint's own attribute lines, so a span
+  // rust-analyzer calls inactive shows `(inactive)` even when the lexical
+  // model said active (and a nested inactive item cannot flip its parent).
+  const adjustedModel = applyMergedInactivity(model, merged);
+
+  return computeHints(text, {
+    ...display,
+    inactive: (line) => merged.has(line),
+    scanned,
+    conditionals: adjustedModel,
+  });
+}
+
+/** C/C++/C# pipeline: tokenizer scan + the preprocessor conditional evaluator. */
+function cFamilyDocumentHints(
+  document: vscode.TextDocument,
+  config: ShiganConfig,
+  text: string,
+  display: HintOptions
+): Hint[] {
+  const syntax = syntaxFor(document.languageId);
+  const scanned = scan(text, syntax);
+  const macros = documentMacros(document, config, syntax);
+  const evaluation = evaluateConditionals(scanned.directives, {
+    macros,
+    trackFileDefines: config.trackFileDefines,
+    syntax,
+  });
+  // Activity is only known to the evaluator; build the model here so the
+  // renderer receives a self-contained `conditionals` value.
+  const conditionals = cConditionals(scanned.directives, {
+    branchActive: (line) => evaluation.branchActive.get(line),
+    blockActive: (line) => evaluation.blockActive.get(line),
+  });
+
+  return computeHints(text, {
+    ...display,
+    inactive: (line) => evaluation.inactiveLines.has(line),
+    scanned,
+    conditionals,
+  });
 }
 
 /**

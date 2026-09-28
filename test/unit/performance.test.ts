@@ -53,7 +53,7 @@ function generateRealistic(functionCount: number): string {
 function expectConsistentHints(hints: Hint[]): void {
   const sorted = hints.every((hint, index) => index === 0 || hints[index - 1].line <= hint.line);
   const textsMatch = hints.every(
-    (hint) => !hint.parts || hint.parts.map((part) => part.text).join('') === hint.text
+    (hint) => hint.parts.map((part) => part.text).join('') === hint.text
   );
   expect(sorted, 'hints are sorted by line').toBe(true);
   expect(textsMatch, 'hint.text equals the concatenation of its parts').toBe(true);

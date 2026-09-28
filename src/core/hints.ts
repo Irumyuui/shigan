@@ -1,5 +1,5 @@
 import { ConditionalModel, cursorActivates } from './conditionals';
-import { segment, shouldShowRange, textOfParts } from './hint-parts';
+import { formatRange, HintTextOptions, segment, shouldShowRange, textOfParts } from './hint-parts';
 import { scan } from './lexer/tokenizer';
 import { BracketMatchResult, BracketPair, matchBrackets } from './match/brackets';
 import { cConditionals } from './match/c-preprocessor';
@@ -22,10 +22,6 @@ export interface HintOptions {
   showLabel?: boolean;
   /** Returns true for lines that live inside an inactive preprocessor branch. */
   inactive?: (line: number) => boolean;
-  /** Whether the branch starting at a branch directive line is active. */
-  branchActive?: (line: number) => boolean | undefined;
-  /** Whether the conditional block opened at a line has an active branch. */
-  blockActive?: (openerLine: number) => boolean | undefined;
   /** Exclude brackets in inactive branches from matching (default true). */
   skipInactiveBrackets?: boolean;
   /**
@@ -38,9 +34,10 @@ export interface HintOptions {
   /** Pre-computed scan result, to avoid scanning the same text twice. */
   scanned?: ScanResult;
   /**
-   * Pre-computed conditional model. When omitted the renderer builds one from
-   * `scanned.directives` using the legacy `branchActive`/`blockActive`
-   * callbacks; when provided, those callbacks are ignored for macros.
+   * Pre-computed conditional model. When omitted the renderer builds a purely
+   * structural one from `scanned.directives` (no activity is known then);
+   * callers that can evaluate activity build the model themselves, e.g.
+   * `cConditionals(scanned.directives, { branchActive, blockActive })`.
    */
   conditionals?: ConditionalModel;
 }
@@ -72,6 +69,7 @@ export function computeHints(text: string, options: HintOptions = {}): Hint[] {
   const showLabel = options.showLabel !== false;
   const inactive = options.inactive;
   const markInactive = options.markInactive !== false;
+  const textOptions: HintTextOptions = { showRange, showLabel, rangeHideThreshold };
 
   const scanned = options.scanned ?? scan(text);
   const lines = splitLines(text);
@@ -89,7 +87,7 @@ export function computeHints(text: string, options: HintOptions = {}): Hint[] {
         : result.pairs.filter((pair) => pair.open.line !== pair.close.line);
 
     for (const pair of pairs) {
-      const hint = bracketHint(lines, pair, showRange, showLabel, rangeHideThreshold);
+      const hint = bracketHint(lines, pair, textOptions);
       // `always` means always: inactive pairs are only excluded from matching
       // (see `skipInactiveBrackets`), never hidden here.
       const isInactive = inactive?.(hint.line) === true || inactive?.(pair.open.line) === true;
@@ -99,12 +97,7 @@ export function computeHints(text: string, options: HintOptions = {}): Hint[] {
   }
 
   if (options.macros !== false) {
-    const model =
-      options.conditionals ??
-      cConditionals(scanned.directives, {
-        branchActive: options.branchActive,
-        blockActive: options.blockActive,
-      });
+    const model = options.conditionals ?? cConditionals(scanned.directives);
     const cursorLine =
       trigger === 'cursor' ? lineAtOffset(text, options.cursorOffset ?? -1) : -1;
 
@@ -117,14 +110,7 @@ export function computeHints(text: string, options: HintOptions = {}): Hint[] {
       if (entry.inactive && options.skipInactiveDirectives === true) continue;
 
       const parts: HintPart[] = entry.segments.map((seg) => {
-        const body = segment(
-          showRange,
-          showLabel,
-          seg.fromLine,
-          seg.toLine,
-          seg.display,
-          rangeHideThreshold
-        );
+        const body = segment(textOptions, seg.fromLine, seg.toLine, seg.display);
         // An empty body renders as the bare marker, without a trailing space.
         const text = body ? `${seg.marker}${body}` : seg.marker.trimEnd();
         return { text, target: seg.target, title: seg.display };
@@ -146,24 +132,16 @@ export function computeHints(text: string, options: HintOptions = {}): Hint[] {
   return hints;
 }
 
-function bracketHint(
-  lines: string[],
-  pair: BracketPair,
-  showRange: boolean,
-  showLabel: boolean,
-  rangeHideThreshold: number
-): Hint {
+function bracketHint(lines: string[], pair: BracketPair, options: HintTextOptions): Hint {
   const parts: string[] = [];
-  if (shouldShowRange(showRange, rangeHideThreshold, pair.open.line, pair.close.line)) {
-    parts.push(`:${pair.open.line + 1}-${pair.close.line + 1}`);
+  if (shouldShowRange(options.showRange, options.rangeHideThreshold, pair.open.line, pair.close.line)) {
+    parts.push(formatRange(pair.open.line, pair.close.line));
   }
-  if (showLabel) {
-    const label = labelFor(lines, pair.open);
-    if (label) parts.push(label);
-  }
+  const label = labelFor(lines, pair.open);
+  if (options.showLabel && label) parts.push(label);
   const text = parts.length > 0 ? ` <- ${parts.join(' ')}` : ' <-';
   const target = { line: pair.open.line, col: pair.open.col };
-  const title = labelFor(lines, pair.open) || pair.open.char;
+  const title = label || pair.open.char;
   return {
     line: pair.close.line,
     text,

@@ -65,8 +65,8 @@ export interface Hint {
   inactive?: boolean;
   /** Primary target: the first part that has one. */
   target?: HintTarget;
-  /** Clickable segments, in order. */
-  parts?: HintPart[];
+  /** Clickable segments, in order. Every producer sets them. */
+  parts: HintPart[];
 }
 
 export interface HintTarget {

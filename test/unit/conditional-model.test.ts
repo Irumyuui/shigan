@@ -13,26 +13,32 @@ const CORPUS = [
 ];
 
 describe('cConditionals', () => {
-  it('matches the renderer output for the legacy callback path', () => {
+  it('applies activity from the model the caller builds', () => {
+    const text = '#if 0\nint a;\n#elif 0\nint b;\n#endif\n';
+    const { conditionals } = predicates(text);
+
+    // Without a model the renderer is purely structural: nothing is known inactive.
+    const structural = computeHints(text, { brackets: false, macros: true, trigger: 'always' });
+    expect(structural.map((hint) => hint.inactive === true)).toEqual([false, false]);
+
+    // The evaluator-backed model marks the branch and the block inactive.
+    const modeled = computeHints(text, {
+      brackets: false,
+      macros: true,
+      trigger: 'always',
+      conditionals,
+    });
+    expect(modeled.map((hint) => hint.inactive === true)).toEqual([true, true]);
+    expect(modeled.map((hint) => hint.text)).toEqual([
+      ' <- :1-3 #if 0',
+      ' <- :3-5 #elif 0 <= :1-5 #if 0',
+    ]);
+  });
+
+  it('leaves activity unknown when no model is supplied', () => {
     for (const text of CORPUS) {
-      const callbacks = predicates(text);
-      const legacy = computeHints(text, {
-        brackets: false,
-        macros: true,
-        trigger: 'always',
-        branchActive: callbacks.branchActive,
-        blockActive: callbacks.blockActive,
-      });
-      const modeled = computeHints(text, {
-        brackets: false,
-        macros: true,
-        trigger: 'always',
-        conditionals: cConditionals(scan(text).directives, {
-          branchActive: callbacks.branchActive,
-          blockActive: callbacks.blockActive,
-        }),
-      });
-      expect(modeled).toEqual(legacy);
+      const structural = computeHints(text, { brackets: false, macros: true, trigger: 'always' });
+      expect(structural.every((hint) => hint.inactive !== true)).toBe(true);
     }
   });
 

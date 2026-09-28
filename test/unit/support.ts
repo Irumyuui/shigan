@@ -2,15 +2,15 @@ import { ConditionalModel } from '../../src/core/conditionals';
 import { syntaxFor } from '../../src/core/language';
 import { scanRust } from '../../src/core/lexer/rust';
 import { scan } from '../../src/core/lexer/tokenizer';
-import { evaluateConditionals } from '../../src/core/match/c-preprocessor';
+import { cConditionals, evaluateConditionals } from '../../src/core/match/c-preprocessor';
 import { hostCfg, parseRustCfgEntries, RustCfgEnvironment } from '../../src/core/match/rust/cfg';
 import { rustConditionals } from '../../src/core/match/rust/conditionals';
 import { MacroDef, ScanResult } from '../../src/core/types';
 
 export interface Predicates {
   inactive: (line: number) => boolean;
-  branchActive: (line: number) => boolean | undefined;
-  blockActive: (line: number) => boolean | undefined;
+  /** The directive model with activity already resolved by the evaluator. */
+  conditionals: ConditionalModel;
 }
 
 /**
@@ -29,7 +29,8 @@ export function predicates(
   }
 
   const syntax = syntaxFor(languageId);
-  const result = evaluateConditionals(scan(text, syntax).directives, {
+  const scanned = scan(text, syntax);
+  const result = evaluateConditionals(scanned.directives, {
     macros,
     trackFileDefines: true,
     syntax,
@@ -37,8 +38,10 @@ export function predicates(
 
   return {
     inactive: (line) => result.inactiveLines.has(line),
-    branchActive: (line) => result.branchActive.get(line),
-    blockActive: (line) => result.blockActive.get(line),
+    conditionals: cConditionals(scanned.directives, {
+      branchActive: (line) => result.branchActive.get(line),
+      blockActive: (line) => result.blockActive.get(line),
+    }),
   };
 }
 

@@ -89,11 +89,14 @@ export function activate(context: vscode.ExtensionContext): void {
         return;
       }
 
+      const documentsByUri = new Map<string, vscode.TextDocument>();
+      for (const document of vscode.workspace.textDocuments) {
+        documentsByUri.set(document.uri.toString(), document);
+      }
+
       const rustUris = event.uris
         .filter((uri) => {
-          const document = vscode.workspace.textDocuments.find(
-            (candidate) => candidate.uri.toString() === uri.toString()
-          );
+          const document = documentsByUri.get(uri.toString());
           return document !== undefined && languageKind(document.languageId) === 'rust';
         })
         .map((uri) => uri.toString());
@@ -225,7 +228,7 @@ function computedHintsForActiveEditor(): unknown[] {
     kind: hint.kind,
     inactive: hint.inactive === true,
     target: hint.target,
-    parts: hint.parts?.map((part) => ({
+    parts: hint.parts.map((part) => ({
       text: part.text,
       target: part.target,
       title: part.title,
