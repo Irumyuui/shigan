@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { createVariableResolver, ShiganConfig } from './config';
+import { mergeCSharpMacros } from './core/csharp';
 import { parseCompileFlags } from './core/flags';
 import { computeHints } from './core/hints';
 import { LanguageSyntax, syntaxFor } from './core/language';
@@ -127,18 +128,18 @@ function documentMacros(
     // C# symbols, lowest precedence first: project file, then the user's
     // csharp.define, then compile flags (which win). compile_commands.json is
     // not consulted for C#.
-    macros = new Map<string, MacroDef>();
-    if (config.csharpInheritProject && document.uri.scheme === 'file') {
-      const project = findCsprojSymbols(document.uri.fsPath, {
-        configuration: config.csharpConfiguration,
-        targetFramework: config.csharpTargetFramework || undefined,
-      });
-      if (project) for (const symbol of project.symbols) addCSharpSymbol(macros, symbol);
-    }
-    for (const symbol of config.csharpDefine) addCSharpSymbol(macros, symbol);
-    for (const [name, def] of parseCompileFlags(config.compileFlags, resolver, syntax).macros) {
-      macros.set(name, def);
-    }
+    const project =
+      config.csharpInheritProject && document.uri.scheme === 'file'
+        ? findCsprojSymbols(document.uri.fsPath, {
+            configuration: config.csharpConfiguration,
+            targetFramework: config.csharpTargetFramework || undefined,
+          })
+        : undefined;
+    macros = mergeCSharpMacros(
+      project?.symbols,
+      config.csharpDefine,
+      parseCompileFlags(config.compileFlags, resolver, syntax).macros
+    );
   } else {
     const fileFlags =
       config.inheritCompileCommands && document.uri.scheme === 'file'
@@ -149,13 +150,4 @@ function documentMacros(
 
   macroCache.set(key, { version: document.version, generation, languageId, macros });
   return macros;
-}
-
-const CSHARP_IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
-
-/** Adds a C# symbol as `NAME`/`1`, ignoring anything that is not an identifier. */
-function addCSharpSymbol(macros: Map<string, MacroDef>, symbol: string): void {
-  const name = symbol.trim();
-  if (!CSHARP_IDENTIFIER.test(name)) return;
-  macros.set(name, { value: '1', functionLike: false });
 }
