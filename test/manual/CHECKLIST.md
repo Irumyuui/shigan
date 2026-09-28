@@ -46,3 +46,30 @@
       `#if 0 ... #endif` hint entirely
 - [ ] `shigan.compileFlags = ["-DFEATURE_A"]` turns the `#else` branch of
       `feature_a` inactive and the `#ifdef` branch active
+
+## C++ (`test/manual/sample.cpp`)
+
+Open `sample.cpp` in the Extension Development Host (language id `cpp`).
+
+- [ ] The multi-line `R"delim( ... )delim"` raw string produces no bracket
+      hints, even though its body contains `{ ( "quoted" ) } [ ]`
+- [ ] The escaped `"brace ): } and \"quote\""` string produces no bracket hints
+- [ ] `main() { ... }` is hinted as usual
+- [ ] `#if defined(FEATURE_A) ... #else ... #endif` hints behave like the C
+      sample (`#else` branch inactive only when `FEATURE_A` is defined)
+
+## C# (`test/manual/sample.cs`)
+
+Open `sample.cs` in the Extension Development Host (language id `csharp`).
+
+- [ ] The value-less `#define DEBUG` counts as truthy: the `#if DEBUG` branch is
+      live and the `#else` branch is the dead one
+- [ ] `@"C:\temp\logs"` and `@"she said ""hi"""` (verbatim strings) produce no
+      bracket hints
+- [ ] The `""" ... """` raw string produces no bracket hints, even though its
+      body spans lines and contains `{`, `}` and `"`
+- [ ] `Main() { ... }` is hinted as usual
+- [ ] `shigan.csharp.define = ["DEBUG"]` keeps the same branches active when
+      the file's own `#define` is removed
+- [ ] With `shigan.csharp.inheritProject = true`, symbols from the nearest
+      `.csproj` / `Directory.Build.props` drive the `#if` evaluation
