@@ -1,6 +1,6 @@
 {
   "extension.displayName": "Shigan",
-  "extension.description": "Clickable bracket and preprocessor (#if/#else/#endif) pairing hints for C.",
+  "extension.description": "Clickable bracket and preprocessor (#if/#else/#endif) pairing hints for C, C++ and C#.",
   "configuration.title": "Shigan",
 
   "shigan.enable.description": "Enable Shigan.",

@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/Irumyuui/shigan/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Irumyuui/shigan/actions/workflows/ci.yml)
 
-Clickable bracket and preprocessor (`#if` / `#else` / `#endif`) pairing hints for C.
+Clickable bracket and preprocessor (`#if` / `#else` / `#endif`) pairing hints for C, C++ and C#.
 
 ```
 if (a == 1) {
@@ -45,6 +45,11 @@ and preprocessor conditionals.
   handled by settings: `skipInactiveBrackets` keeps brackets out of matching,
   `skipInactiveDirectives` hides directive hints, and `markInactive` flags
   them.
+
+C and C++ are lexed directly, including C++ raw string literals (`R"(...)"`).
+For C#, the conditional symbols come from the `DefineConstants` of the nearest
+`.csproj` / `Directory.Build.props` plus the implicit target-framework symbols,
+and can be overridden through the `shigan.csharp.*` settings.
 
 Hints are **inlay hints**, the only decoration-like UI that supports a click
 action. Their colour comes from the theme (`editorInlayHint.foreground`) and
@@ -98,6 +103,12 @@ Basic settings:
   their appearance.
 - Only the lexical tier exists; there is no clangd-backed tier
   (`textDocument/inactiveRegions`).
+- MSBuild is not fully evaluated: only the common `DefineConstants`,
+  `TargetFramework` and `Configuration` shapes are read.
+- Multi-target `<TargetFrameworks>` uses the first entry.
+- The implicit target-framework symbol table may drift from newer SDKs.
+- Brackets inside C# interpolated-string holes are not matched; the literal is
+  treated as opaque.
 
 ## Development
 

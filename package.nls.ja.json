@@ -1,6 +1,6 @@
 {
   "extension.displayName": "Shigan",
-  "extension.description": "C 向けの、クリックできる括弧・プリプロセッサ指令（#if/#else/#endif）の対応ヒント。",
+  "extension.description": "C・C++・C# 向けの、クリックできる括弧・プリプロセッサ指令（#if/#else/#endif）の対応ヒント。",
   "configuration.title": "Shigan",
 
   "shigan.enable.description": "Shigan を有効にします。",

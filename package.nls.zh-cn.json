@@ -1,6 +1,6 @@
 {
   "extension.displayName": "Shigan",
-  "extension.description": "为 C 提供可点击的括号与预处理指令（#if/#else/#endif）配对提示。",
+  "extension.description": "为 C、C++ 和 C# 提供可点击的括号与预处理指令（#if/#else/#endif）配对提示。",
   "configuration.title": "Shigan",
 
   "shigan.enable.description": "启用 Shigan。",
