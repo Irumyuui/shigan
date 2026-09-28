@@ -30,12 +30,13 @@ const OPENERS = new Set(['(', '[', '{']);
 
 /**
  * A macro definition's head at the END of a line: `macro_rules! name` or
- * `macro name`, optionally behind `pub`, preceded by a non-word boundary so a
- * path like `my_macro m` cannot match. The delimiter that follows (possibly on
- * a later line) opens the macro body.
+ * `macro name` (the name may be a raw identifier, `r#name`), optionally behind
+ * `pub`, preceded by a non-word boundary so a path like `my_macro m` cannot
+ * match. The delimiter that follows (possibly on a later line) opens the macro
+ * body.
  */
 const MACRO_HEAD_TAIL =
-  /(?:^|[^\w])(?:pub(?:\s*\([^)]*\))?\s+)?(?:macro_rules\s*!|macro(?![A-Za-z0-9_]))\s+[A-Za-z_][A-Za-z0-9_]*\s*$/;
+  /(?:^|[^\w])(?:pub(?:\s*\([^)]*\))?\s+)?(?:macro_rules\s*!|macro(?![A-Za-z0-9_]))\s+(?:r#)?[A-Za-z_][A-Za-z0-9_]*\s*$/;
 
 /**
  * A macro head whose name sits on a LATER line: `macro_rules!` / `macro` alone
@@ -685,8 +686,11 @@ function maskAttributeSpans(masked: readonly string[]): string[] {
  * that rescanned to line 0 for one-line `#[…]` items.
  *
  * A head may be split across lines (`macro_rules!` then the name, then the
- * body delimiter); {@link MACRO_KEYWORD_ONLY} starts that state and a
- * name-only line carries it to the delimiter's line.
+ * body delimiter); {@link MACRO_KEYWORD_ONLY} starts that state and only a
+ * resolved name (optional `r#` raw prefix) publishes the head. A keyword-only
+ * line that never gets a name — invalid Rust, or a commented-out keyword — must
+ * not flag anything, so the wait simply expires on the next code line instead
+ * of swallowing that item's cfgs.
  */
 function nearestMacroHeadBefore(code: readonly string[]): boolean[] {
   const result = new Array<boolean>(code.length).fill(false);
@@ -703,18 +707,29 @@ function nearestMacroHeadBefore(code: readonly string[]): boolean[] {
       continue;
     }
     if (MACRO_KEYWORD_ONLY.test(trimmed)) {
-      pending = true;
+      // The keyword alone is not a head: nothing may be flagged until the name
+      // actually resolves (see the doc comment).
+      pending = false;
       awaitingName = true;
       continue;
     }
     if (awaitingName) {
-      const name = /^[A-Za-z_][A-Za-z0-9_]*/.exec(trimmed);
+      const name = /^(?:r#)?[A-Za-z_][A-Za-z0-9_]*/.exec(trimmed);
       if (name) {
         const rest = trimmed.slice(name[0].length).trim();
-        // A bare name keeps the head alive for a delimiter on a later line; a
-        // delimiter on this line is the opener, so the head ends here.
-        pending = rest === '';
         awaitingName = false;
+        if (rest === '') {
+          // A bare name keeps the head alive for a delimiter on a later line.
+          pending = true;
+        } else if (OPENERS.has(rest[0])) {
+          // The delimiter shares the name's line, so the cross-line keyword is
+          // invisible to isMacroBodyOpener's same-line check; flag this line
+          // (the body delimiter itself then carries the macro count).
+          pending = false;
+          result[line] = true;
+        } else {
+          pending = false;
+        }
         continue;
       }
     }

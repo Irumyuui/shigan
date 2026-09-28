@@ -332,6 +332,54 @@ describe('pairCfgItems (macro bodies whose delimiter is not on the header line)'
   });
 });
 
+describe('pairCfgItems (dangling macro keyword)', () => {
+  it('lets a keyword-only line expire before the next item', () => {
+    expect(spansFor('macro_rules!\n\nfn g() {\n    #[cfg(unix)]\n    fn inner() {}\n}\n')).toEqual([
+      { attrLine: 3, attrLines: [3], headLines: [3], displays: ['#[cfg(unix)]'], endLine: 4 },
+    ]);
+  });
+
+  it('lets a commented keyword-only line expire', () => {
+    expect(
+      spansFor('macro_rules! // planned\nfn g() {\n    #[cfg(unix)]\n    fn inner() {}\n}\n')
+    ).toEqual([{ attrLine: 2, attrLines: [2], headLines: [2], displays: ['#[cfg(unix)]'], endLine: 3 }]);
+  });
+
+  it('lets a bare macro keyword line expire', () => {
+    expect(spansFor('macro\n\nfn g() {\n    #[cfg(unix)]\n    fn inner() {}\n}\n')).toEqual([
+      { attrLine: 3, attrLines: [3], headLines: [3], displays: ['#[cfg(unix)]'], endLine: 4 },
+    ]);
+  });
+
+  it('still excludes a real macro body after a dangling keyword line', () => {
+    expect(
+      spansFor('macro_rules!\n\nmacro_rules! real {\n    #[cfg(unix)]\n    fn w() {}\n}\n')
+    ).toEqual([]);
+  });
+
+  it('keeps the cfgs of a plain item after a dangling keyword line', () => {
+    expect(spansFor('macro_rules!\n\n#[cfg(unix)]\nfn g() {\n}\n')).toEqual([
+      { attrLine: 2, attrLines: [2], headLines: [2], displays: ['#[cfg(unix)]'], endLine: 4 },
+    ]);
+  });
+});
+
+describe('pairCfgItems (raw-identifier macro names)', () => {
+  it('excludes a raw-name macro body whose delimiter shares the head line', () => {
+    expect(spansFor('macro_rules! r#m {\n    #[cfg(unix)]\n    fn w() {}\n}\n')).toEqual([]);
+  });
+
+  it('excludes a split raw-name macro body', () => {
+    expect(spansFor('macro_rules! r#m\n{\n    #[cfg(unix)]\n    fn w() {}\n}\n')).toEqual([]);
+  });
+
+  it('does not accept a bare # as a macro name', () => {
+    expect(spansFor('macro_rules! #m {\n    #[cfg(unix)]\n    fn w() {}\n}\n')).toEqual([
+      { attrLine: 1, attrLines: [1], headLines: [1], displays: ['#[cfg(unix)]'], endLine: 2 },
+    ]);
+  });
+});
+
 describe('pairCfgItems (two cfg groups on one line)', () => {
   it('pairs two cfg groups that share a line', () => {
     expect(spansFor('#[cfg(a)] fn f() {} #[cfg(b)] fn g() {}\n')).toEqual([
