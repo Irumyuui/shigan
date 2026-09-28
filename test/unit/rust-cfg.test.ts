@@ -337,6 +337,28 @@ describe('environmentFromSeed', () => {
     expect(environment.host).toBeUndefined();
     expect(environment.features).toBeUndefined();
   });
+
+  it('decides feature absence when features are declared without a manifest', () => {
+    const environment = environmentFromSeed({
+      features: { declared: ['a'] },
+    });
+    // Discriminating: a `seed.manifest ? … : false` mutant would leave this
+    // undecidable instead of picking up the absent-manifest default.
+    expect(environment.features).toEqual({
+      decidableAbsence: true,
+      universe: new Set(['a']),
+      enabled: new Set(),
+    });
+  });
+
+  it('leaves an unrecognized host OS undecided', () => {
+    const environment = environmentFromSeed({
+      host: { platform: 'unknown-os', arch: 'x64' },
+    });
+    expect(environment.host?.size).toBe(0);
+    expect(evaluateCfgPredicate('windows', environment)).toBeUndefined();
+    expect(evaluateCfgPredicate('target_arch = "x86_64"', environment)).toBeUndefined();
+  });
 });
 
 describe('grammar and malformed input', () => {
