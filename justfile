@@ -42,7 +42,7 @@ test: typecheck test-unit
 test-integration:
     bun run test:integration
 
-# What CI should run
+# Every check CI runs, in one recipe (CI itself calls the steps separately)
 ci: typecheck test-unit test-integration
 
 # Remove dist/, out/ and artifacts/

@@ -2,7 +2,8 @@
 
 [![CI](https://github.com/Irumyuui/shigan/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Irumyuui/shigan/actions/workflows/ci.yml)
 
-Clickable bracket and preprocessor (`#if` / `#else` / `#endif`) pairing hints for C, C++, C# and Rust.
+Clickable bracket, preprocessor (`#if` / `#else` / `#endif`, `#region`) and Rust
+`#[cfg]` pairing hints for C, C++, C# and Rust.
 
 ```
 if (a == 1) {
@@ -20,8 +21,8 @@ if (a == 1) {
 
 Every segment is clickable and jumps to its target: `}` → `{`; `#else` /
 `#elif` → the preceding directive; on an `#endif`, `<-` → the preceding branch
-and `<=` → the opening `#if`. Hovering shows a title and a short preview of the
-target.
+and, when the chain has more than one branch, `<=` → the opening `#if`.
+Hovering shows a title and a short preview of the target.
 
 ## How it works
 
@@ -38,8 +39,9 @@ and preprocessor conditionals.
   in a chain also references the opener.
 - **Macros** come from `shigan.compileFlags` and, optionally, the nearest
   `compile_commands.json`; `#define` / `#undef` in the file are tracked. A
-  conservative evaluator resolves `#if`, and unknown conditions never mark
-  anything inactive.
+  conservative evaluator resolves `#if`: a literal `0`, and an undefined
+  identifier (which the preprocessor also reads as `0`), are decided inactive;
+  only a condition the evaluator cannot parse at all stays unknown and live.
 - **`always`** shows every multi-line bracket pair and every directive pair,
   including directives in a fully inactive `#if 0` block. Inactive code is
   handled by settings: `skipInactiveBrackets` keeps brackets out of matching,
@@ -72,8 +74,8 @@ they follow `editor.inlayHints.enabled` — there is no colour/opacity setting.
 | --- | --- | --- |
 | `shigan.enable` | `true` | Master switch |
 | `shigan.languages` | `["c","cpp","csharp","rust"]` | Active language ids |
-| `shigan.trigger` | `"cursor"` | `cursor` / `always` / `hover` / `off`, for both kinds |
-| `shigan.show` | `["brackets","macros"]` | Which kinds to hint; `macros` also gates the Rust `#[cfg]` gating hints |
+| `shigan.trigger` | `"cursor"` | `cursor` / `always` / `hover` / `off`, for every hint kind |
+| `shigan.show` | `["brackets","macros"]` | Which kinds to hint; `macros` gates `#if`/`#ifdef`/`#ifndef`/`#elif`/`#elifdef`/`#elifndef`/`#else`/`#endif`, `#region`/`#endregion` and the Rust `#[cfg]` hints |
 | `shigan.compileFlags` | `[]` | Compiler-style flags, e.g. `["-DDEBUG=1","-Iinclude","-std=c11"]` |
 | `shigan.inheritCompileCommands` | `false` | Also read `-D`/`-I`/`-std` from `compile_commands.json` |
 | `shigan.csharp.define` | `[]` | Extra C# symbols for `#if`, e.g. `["TRACE","DEBUG"]` |
@@ -112,6 +114,8 @@ Basic settings:
   paired from source.
 - Macros defined in included headers are unknown unless supplied via
   `shigan.compileFlags`.
+- Trigraphs (`??=`) and digraphs (`<%`/`%>`, `<:`/`:>`) are not translated, so
+  `??=if 1` is not a directive and `<% … %>` blocks get no brace hints.
 - Hints are inlay hints: the theme and `editor.inlayHints.enabled` control
   their appearance.
 - Only the lexical tier exists; there is no clangd-backed tier
@@ -129,10 +133,10 @@ Basic settings:
   when it ends on a type declaration (`class`/`struct`/`interface`/`enum`/
   `namespace`/`record`/`union`); other wrapped statements keep the plain
   previous-line label.
-- Only `*.csproj` is watched: editing `Directory.Build.props` or
+- `*.csproj` and `Cargo.toml` are watched: editing `Directory.Build.props` or
   `compile_commands.json` still needs a settings change (or a window reload) to
-  take effect, and any `*.csproj` change clears the project caches of every
-  workspace folder.
+  take effect, and any `*.csproj` or `Cargo.toml` change clears the C#/Cargo
+  project caches of every workspace folder.
 - Rust `#[cfg]` gating only pairs whole **items** with a brace body:
   semicolon-terminated items (`mod m;`, `use …;`, tuple structs,
   `type`/`static`/`const` without a brace body) get NO hint, and `#[cfg]` inside
@@ -183,7 +187,7 @@ Without `just`: `bun run build`, `bun run test:unit`, `bun run package`,
 
 `bun run inspect [file] [always|cursor]` prints the hints Shigan would render.
 Press `F5` (Run Extension) for manual testing; see `test/manual/CHECKLIST.md`
-and `test/manual/sample.c`.
+and the `test/manual/sample.{c,cpp,cs,rs}` samples.
 
 Installing or updating shows a one-time **Reload Window** prompt, and open
 editors are refreshed on activation, so a reload is usually not needed. See

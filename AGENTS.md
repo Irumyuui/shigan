@@ -61,8 +61,8 @@ git tag -d v0.0.1
 ## Architecture
 
 - `src/core/**` is deliberately **`vscode`-free** (lexer, bracket matcher, preprocessor pairing, `#if` evaluator,
-  settings mapping) so vitest can run it. Never import `vscode` there; the VSCode side lives in `src/render/**`,
-  `src/config.ts`, `src/extension.ts`.
+  Rust `#[cfg]` model, Cargo/csproj readers, settings mapping) so vitest can run it. Never import `vscode` there;
+  the VSCode side lives in `src/render/**`, `src/config.ts`, `src/extension.ts`.
 - `src/core/language.ts` is the language seam: `languageKind(languageId)` is the single dispatch table
   (`c`/`cpp`/`csharp`/`rust`; unknown ids fall back to `c`) and `syntaxFor(languageId)` returns a `LanguageSyntax`
   profile (`c`, `cpp`, `csharp`) that `scan` and `evaluateConditionals` accept as an optional argument. Per-language
@@ -105,7 +105,9 @@ git tag -d v0.0.1
   (fixtures, hover and the diagnostic command rely on it).
 - `always` means *always* — nothing is hidden because of `#if` state. Inactive code is handled by
   `skipInactiveBrackets` (matching), `skipInactiveDirectives` (hiding) and `markInactive` (the `(inactive)` marker).
-  The evaluator is conservative: unknown conditions never mark anything inactive.
+  The evaluator is conservative: a condition it cannot parse stays unknown and never marks anything inactive,
+  while a literal `0` — and an undefined identifier, which the preprocessor also reads as `0` — is decided
+  inactive.
 - Range text is `:start-end` with a colon on purpose (`#1-3` collided visually with directives).
 - `#region`/`#endregion` pairing lives in `src/core/match/c-preprocessor.ts` (`pairRegions`) and ships under the `macros`
   switch — no separate setting, and it is never marked inactive. A lone `{` is labelled by a bounded continuation
@@ -156,8 +158,9 @@ git tag -d v0.0.1
 
 ## Tests
 
-- `test/unit/**` — vitest, pure logic. `test/unit/support.ts` exposes `predicates(text, seed, languageId)` mirroring
-  the extension's evaluation; use it for anything involving `#if`.
+- `test/unit/**` — vitest, pure logic. `test/unit/support.ts` exposes `predicates(text, seed, languageId)` for the
+  C-family `#if` evaluation and `rustHarness(text, seed)` / `RustCfgSeed` for the Rust `#[cfg]` model; both mirror
+  what the extension wires in.
 - `test/unit/performance.test.ts` is a scale guard, not a benchmark: synthetic 20k–100k-line documents with
   deliberately generous wall-clock budgets. Keep the budgets loose (they catch superlinear regressions, not
   micro-timing) — tightening them makes the suite flaky.

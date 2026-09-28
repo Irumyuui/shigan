@@ -1,12 +1,12 @@
 {
   "extension.displayName": "Shigan",
-  "extension.description": "Clickable bracket and preprocessor (#if/#else/#endif) pairing hints for C, C++, C# and Rust.",
+  "extension.description": "Clickable bracket, preprocessor (#if/#else/#endif, #region) and Rust #[cfg] pairing hints for C, C++, C# and Rust.",
   "configuration.title": "Shigan",
 
   "shigan.enable.description": "Enable Shigan.",
   "shigan.languages.description": "Language ids Shigan is active for. Defaults to C, C++, C# and Rust.",
-  "shigan.trigger.markdownDescription": "When to show pair hints (applies to both kinds).\n\n- `cursor`: only the pair the caret is on. A bracket needs the caret on/next to it; a directive needs the caret anywhere on its line.\n- `always`: every bracket pair that spans more than one line, plus every directive pair — nothing is hidden because of `#if` state. Brackets inside a disabled branch are simply not matched (see `shigan.preprocessor.skipInactiveBrackets`).\n- `hover`: in the hover tooltip only.\n- `off`: never.\n\nEach segment of a hint is clickable (`}` -> `{`; `#else`/`#elif` -> the previous directive; on an `#endif`, `<-` -> the preceding branch and `<=` -> the opening `#if`).",
-  "shigan.show.description": "Which kinds of pairs to hint: 'brackets' = ()[]{} and 'macros' = #if/#elif/#else/#endif.",
+  "shigan.trigger.markdownDescription": "When to show pair hints (applies to every hint kind).\n\n- `cursor`: only the pair the caret is on. A bracket needs the caret on/next to it; a directive needs the caret anywhere on its line.\n- `always`: every bracket pair that spans more than one line, plus every directive pair — nothing is hidden because of `#if` state. Brackets inside a disabled branch are simply not matched (see `shigan.preprocessor.skipInactiveBrackets`).\n- `hover`: in the hover tooltip only.\n- `off`: never.\n\nEach segment of a hint is clickable (`}` -> `{`; `#else`/`#elif` -> the previous directive; on an `#endif`, `<-` -> the preceding branch and, when the chain has more than one branch, `<=` -> the opening `#if`).",
+  "shigan.show.description": "Which kinds of pairs to hint: 'brackets' = ()[]{} and 'macros' = #if/#ifdef/#ifndef/#elif/#elifdef/#elifndef/#else/#endif, #region/#endregion and the Rust #[cfg] hints.",
   "shigan.compileFlags.itemDescription": "A compiler-style flag, e.g. -DFOO=1, -UBAR, -std=c11, -Iinclude.",
   "shigan.compileFlags.markdownDescription": "Compiler-style flags used when deciding which conditional branches are active, e.g. `[\"-DDEBUG=1\", \"-Iinclude\", \"-std=c11\"]`. Mirrors clangd's `CompileFlags.Add`. Unknown flags are ignored. `${workspaceFolder}`, `${fileDirname}` and `${env:NAME}` are expanded.",
   "shigan.inheritCompileCommands.description": "Also read -D/-I/-std from the nearest compile_commands.json for the current file. Flags from 'shigan.compileFlags' take precedence.",

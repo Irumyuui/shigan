@@ -3,10 +3,13 @@
  * Builds the extension and packages it into a VSIX.
  *
  * Usage:
- *   node scripts/package.mjs                 # dev VSIX (sourcemap, not minified)
- *   node scripts/package.mjs --minify        # production VSIX (minified, no sourcemap)
+ *   node scripts/package.mjs                 # dev build (not minified)
+ *   node scripts/package.mjs --minify        # production build (minified, no sourcemap)
  *   node scripts/package.mjs --install       # also install into the local VS Code
- *   node scripts/package.mjs --no-sourcemap  # dev VSIX without sourcemap
+ *   node scripts/package.mjs --no-sourcemap  # dev build without a sourcemap
+ *
+ * `.vscodeignore` excludes `**/*.map`, so the sourcemap a dev build emits does
+ * not ship inside the VSIX either way.
  */
 import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdirSync, readFileSync } from 'node:fs';
@@ -20,6 +23,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const args = new Set(process.argv.slice(2));
 
 const minify = args.has('--minify');
+// Dev builds emit a sourcemap; `.vscodeignore` keeps it out of the VSIX.
 const sourcemap = !minify && !args.has('--no-sourcemap');
 const install = args.has('--install');
 

@@ -22,8 +22,9 @@
 
 - [ ] Every multi-line bracket pair in active code is hinted
 - [ ] Single-line pairs (e.g. one-line `if (x) { y(); }`) are not hinted
-- [ ] Braces of the function inside `#if 0` are **not** hinted, and the
-      `#if 0 ... #endif` pair itself is not hinted either
+- [ ] Braces of the function inside `#if 0` are **not** hinted, while the
+      `#if 0 ... #endif` directive pair is still hinted and flagged
+      `(inactive)`
 - [ ] `#ifdef FEATURE_A` ... `#else` ... `#endif` shows `#endif` and the
       `#else` branch hint
 - [ ] Braces inside `"a { } [ ] ) ("` (a string) and inside
