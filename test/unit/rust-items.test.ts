@@ -115,6 +115,69 @@ describe('pairCfgItems (no span)', () => {
   });
 });
 
+describe('pairCfgItems (attribute-line tails)', () => {
+  it('pairs the item after a non-cfg attribute on the next line', () => {
+    expect(spansFor('#[cfg(feature = "nope")]\n#[test] fn t() {}\n')).toEqual([
+      { attrLine: 0, attrLines: [0], displays: ['#[cfg(feature = "nope")]'], endLine: 1 },
+    ]);
+  });
+
+  it('pairs a struct behind a derive attribute on the next line', () => {
+    expect(
+      spansFor('#[cfg(feature = "nope")]\n#[derive(Clone)] struct S {\n    a: u32,\n}\n')
+    ).toEqual([
+      { attrLine: 0, attrLines: [0], displays: ['#[cfg(feature = "nope")]'], endLine: 3 },
+    ]);
+  });
+
+  it('does not attach a cfg to an ungated item after a self-contained one', () => {
+    expect(spansFor('#[cfg(feature = "nope")]\n#[test] fn t() {}\nfn g() {\n}\n')).toEqual([
+      { attrLine: 0, attrLines: [0], displays: ['#[cfg(feature = "nope")]'], endLine: 1 },
+    ]);
+  });
+
+  it('merges same-line attributes separated by a non-cfg attribute', () => {
+    expect(
+      spansFor('#[cfg(unix)] #[allow(dead_code)] #[cfg(feature = "a")] fn f() {}\n')
+    ).toEqual([
+      {
+        attrLine: 0,
+        attrLines: [0, 0],
+        displays: ['#[cfg(unix)]', '#[cfg(feature = "a")]'],
+        endLine: 0,
+      },
+    ]);
+  });
+
+  it('treats a non-comment `*` line as an item head, not a comment', () => {
+    expect(spansFor('#[cfg(unix)]\n*p += 1;\nfn g() {\n}\n')).toEqual([]);
+  });
+
+  it('skips a doc comment between the attribute and the item', () => {
+    expect(spansFor('#[cfg(unix)]\n/// docs\nfn f() {}\n')).toEqual([
+      { attrLine: 0, attrLines: [0], displays: ['#[cfg(unix)]'], endLine: 2 },
+    ]);
+  });
+});
+
+describe('pairCfgItems (bracket-depth semicolons)', () => {
+  it('pairs an item with a semicolon inside an array type', () => {
+    expect(spansFor('#[cfg(unix)] fn f(a: [u8; 4]) {\n}\n')).toEqual([
+      { attrLine: 0, attrLines: [0], displays: ['#[cfg(unix)]'], endLine: 1 },
+    ]);
+  });
+
+  it('pairs a generic item with a semicolon inside a const parameter', () => {
+    expect(spansFor('#[cfg(unix)]\nfn f<const N: usize>(a: [u8; N]) {\n}\n')).toEqual([
+      { attrLine: 0, attrLines: [0], displays: ['#[cfg(unix)]'], endLine: 2 },
+    ]);
+  });
+
+  it('still rejects a top-level semicolon before the next item', () => {
+    expect(spansFor('#[cfg(x)]\nconst N: usize = 4;\nfn f() {}\n')).toEqual([]);
+  });
+});
+
 describe('pairCfgItems (merged attributes)', () => {
   it('merges consecutive cfg attributes into one span', () => {
     expect(spansFor('#[cfg(a)]\n#[cfg(b)]\nfn f() {}\n')).toEqual([

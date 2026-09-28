@@ -45,10 +45,6 @@ export function pairCfgItems(scanned: ScanResult, lines: readonly string[]): Cfg
   );
   if (cfgs.length === 0) return [];
 
-  const cfgByLine = new Map<number, CfgAttributeToken>();
-  for (const attr of cfgs) if (!cfgByLine.has(attr.line)) cfgByLine.set(attr.line, attr);
-
-  // Every outer cfg attribute by position, so a same-line sibling can be merged.
   const cfgByPos = new Map<string, CfgAttributeToken>();
   for (const attr of scanned.cfgs ?? []) {
     if (attr.name === 'cfg' && !attr.inner) cfgByPos.set(`${attr.line}:${attr.col}`, attr);
@@ -60,15 +56,7 @@ export function pairCfgItems(scanned: ScanResult, lines: readonly string[]): Cfg
 
   for (const attr of cfgs) {
     if (consumed.has(attr.line)) continue;
-    const span = pairOne(
-      attr,
-      cfgByLine,
-      cfgByPos,
-      consumed,
-      scanned.brackets,
-      pairs.byOpenOffset,
-      lines
-    );
+    const span = pairOne(attr, cfgByPos, consumed, scanned.brackets, pairs.byOpenOffset, lines);
     if (span) spans.push(span);
   }
 
@@ -78,7 +66,6 @@ export function pairCfgItems(scanned: ScanResult, lines: readonly string[]): Cfg
 
 function pairOne(
   first: CfgAttributeToken,
-  cfgByLine: Map<number, CfgAttributeToken>,
   cfgByPos: Map<string, CfgAttributeToken>,
   consumed: Set<number>,
   brackets: readonly BracketToken[],
@@ -87,63 +74,54 @@ function pairOne(
 ): CfgItemSpan | undefined {
   const limit = first.line + MAX_LOOKAHEAD;
   const merged: CfgAttributeToken[] = [];
+  let line = first.line;
+  let col = first.col;
   let itemLine = -1;
   let itemHead = '';
 
-  let current: CfgAttributeToken | undefined = first;
+  // Walk the attribute group one attribute at a time, looking at each
+  // attribute's own tail (which may hold another attribute OR the item head).
+  for (;;) {
+    const attribute = cfgByPos.get(`${line}:${col}`);
+    if (attribute) merged.push(attribute);
 
-  while (current) {
-    merged.push(current);
-
-    const close = findAttributeClose(lines, current);
+    const close = findAttributeClose(lines, line, col);
     if (!close) return undefined;
-    const rest = (lines[close.line] ?? '').slice(close.col);
-    const restTrim = rest.trim();
 
-    if (restTrim !== '' && !isCommentLine(restTrim)) {
-      if (isAttributeLine(restTrim)) {
-        // Another attribute on the same line: merge it and re-examine its tail.
-        const nextCol = close.col + rest.indexOf('#');
-        const next = cfgByPos.get(`${close.line}:${nextCol}`);
-        if (!next || next.offset <= current.offset || consumed.has(next.line)) return undefined;
-        current = next;
+    const tail = (lines[close.line] ?? '').slice(close.col);
+    if (isBlankOrComment(tail)) {
+      // Nothing usable on this line: take the next non-blank/non-comment line.
+      let next = close.line + 1;
+      while (next <= limit && isBlankOrComment(lines[next] ?? '')) next++;
+      if (next > limit) return undefined;
+
+      const text = lines[next] ?? '';
+      const hash = attributeStartColumn(text);
+      if (hash >= 0) {
+        if (next < line || (next === line && hash <= col)) return undefined;
+        line = next;
+        col = hash;
         continue;
       }
-      // Non-empty tail after `]` is the item head, on the same line.
-      itemLine = close.line;
-      itemHead = restTrim;
+
+      itemLine = next;
+      itemHead = text.trim();
       break;
     }
 
-    // No usable same-line tail: take the first non-blank/comment/attribute line.
-    let line = close.line + 1;
-    let attribute: CfgAttributeToken | undefined;
-    while (line <= limit) {
-      const trimmed = (lines[line] ?? '').trim();
-      if (trimmed === '' || isCommentLine(trimmed)) {
-        line++;
-        continue;
-      }
-      if (isAttributeLine(trimmed)) {
-        const candidate = cfgByLine.get(line);
-        if (candidate && !consumed.has(candidate.line)) {
-          attribute = candidate;
-          break;
-        }
-        line++;
-        continue;
-      }
-      itemLine = line;
-      itemHead = trimmed;
-      break;
-    }
-
-    if (itemLine >= 0) break;
-    if (attribute) {
-      current = attribute;
+    // A tail that starts another attribute is skipped/merged and re-examined.
+    const hash = tail.indexOf('#');
+    if (hash >= 0 && isAttributeStart(tail.trim())) {
+      const nextCol = close.col + hash;
+      if (nextCol <= col) return undefined;
+      line = close.line;
+      col = nextCol;
       continue;
     }
-    return undefined;
+
+    itemLine = close.line;
+    itemHead = tail.trim();
+    break;
   }
 
   if (itemLine < 0) return undefined;
@@ -171,12 +149,10 @@ function pairOne(
   }
   if (!open) return undefined;
 
-  // A `;` before the opening brace ends a semicolon-terminated item; the raw
-  // scan may stop early on a `;` inside a string/type, which is the safe way.
-  let before = '';
-  for (let L = itemLine; L < open.line; L++) before += (lines[L] ?? '') + '\n';
-  before += (lines[open.line] ?? '').slice(0, open.col);
-  if (before.includes(';')) return undefined;
+  // A top-level `;` before the opening brace ends a semicolon-terminated item
+  // (`use a::b;`, `const X: i32 = 1;`). The guard is depth-aware so a `;` inside
+  // `(...)`/`[...]` (e.g. `[u8; 4]`, `[u8; N]`) does not disqualify the item.
+  if (hasTopLevelSemicolon(lines, itemLine, open)) return undefined;
 
   const pair = byOpenOffset.get(open.offset);
   if (!pair || pair.close.line > limit) return undefined;
@@ -190,16 +166,45 @@ function pairOne(
 }
 
 /**
- * Position just after the `]` that closes the attribute starting at `attr`
- * (which may span several lines). Strings are skipped so a `]` inside a cfg
- * value cannot close it early.
+ * True when a `;` sits at bracket depth 0 anywhere from `itemLine` up to (but not
+ * including) the opening brace `open`. `(`/`[`/`{` raise the depth and their
+ * closers lower it, so `fn f(a: [u8; 4]) {}` and `fn f<const N: usize>() {}`
+ * stay guarded as items while `const X: i32 = 1;` does not.
+ */
+function hasTopLevelSemicolon(
+  lines: readonly string[],
+  itemLine: number,
+  open: BracketToken
+): boolean {
+  let depth = 0;
+  for (let line = itemLine; line <= open.line; line++) {
+    const text = lines[line] ?? '';
+    const end = line === open.line ? open.col : text.length;
+    for (let index = 0; index < end; index++) {
+      const ch = text[index];
+      if (ch === '(' || ch === '[' || ch === '{') depth++;
+      else if (ch === ')' || ch === ']' || ch === '}') {
+        if (depth > 0) depth--;
+      } else if (ch === ';' && depth === 0) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+/**
+ * Position just after the `]` that closes the attribute starting at
+ * `(startLine, startCol)` on its `#` (which may span several lines). Strings are
+ * skipped so a `]` inside a cfg value cannot close it early.
  */
 function findAttributeClose(
   lines: readonly string[],
-  attr: CfgAttributeToken
+  startLine: number,
+  startCol: number
 ): { line: number; col: number } | undefined {
-  let line = attr.line;
-  let col = attr.col;
+  let line = startLine;
+  let col = startCol;
   let depth = 0;
   let opened = false;
 
@@ -242,6 +247,31 @@ function isFirstOnLine(attr: CfgAttributeToken, lines: readonly string[]): boole
   return (lines[attr.line] ?? '').slice(0, attr.col).trim() === '';
 }
 
+/** True for `#[` / `#![` at the start of an already-trimmed string. */
+function isAttributeStart(trimmed: string): boolean {
+  return trimmed.startsWith('#[') || trimmed.startsWith('#![');
+}
+
+/** Column of the `#` when `text` starts (after whitespace) with an attribute, else -1. */
+function attributeStartColumn(text: string): number {
+  const trimmed = text.trimStart();
+  return isAttributeStart(trimmed) ? text.length - trimmed.length : -1;
+}
+
+/**
+ * True when a line has no code: blank, a `//` comment, or a `/*` block comment.
+ * A `*` prefix is deliberately NOT a comment here (`*p += 1;` is code); the
+ * lexer already knows the interior of a real block comment.
+ */
+function isBlankOrComment(text: string): boolean {
+  const trimmed = text.trim();
+  return trimmed === '' || isCommentLine(trimmed);
+}
+
+function isCommentLine(trimmed: string): boolean {
+  return trimmed.startsWith('//') || trimmed.startsWith('/*');
+}
+
 /** Brace depth (from the start of the file) just before `offset`. */
 function braceDepthBefore(brackets: readonly BracketToken[], offset: number): number {
   let depth = 0;
@@ -272,12 +302,4 @@ function isInMacroBody(
   }
 
   return stack.some((brace) => MACRO_BODY_LINE.test(lines[brace.line] ?? ''));
-}
-
-function isCommentLine(trimmed: string): boolean {
-  return trimmed.startsWith('//') || trimmed.startsWith('/*') || trimmed.startsWith('*');
-}
-
-function isAttributeLine(trimmed: string): boolean {
-  return trimmed.startsWith('#[') || trimmed.startsWith('#![');
 }
