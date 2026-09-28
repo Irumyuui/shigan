@@ -105,9 +105,14 @@ git tag -d v0.0.1
 - **Integration tests restore settings by writing defaults**, never `update(key, undefined)` — removal proved
   unreliable and left `shigan.enable: false` behind, silently emptying every later test. Copy the `BASELINE` pattern
   in `test/integration/settings.test.ts`.
-- `settings.test.ts` generates `test/integration/workspace/fixture/compile_commands.json` at runtime (its `directory`
-  must be absolute) and deletes it in `suiteTeardown`; workspace settings land in `test/integration/workspace/.vscode/`
-  (both gitignored).
+- `settings.test.ts` generates `test/integration/workspace/fixture/settings/compile_commands.json` at runtime (its
+  `directory` must be absolute) and deletes it in `suiteTeardown`; every integration suite cleans only its own
+  `fixture/<suite>` directory, never the shared `fixture/` root.
+- `.vscode-test.mjs` generates and opens `test/integration/shigan-test.code-workspace`, so the host starts as a
+  multi-root workspace: adding the first extra folder to a single-folder window restarts the extension host and would
+  kill the in-host test run. `ConfigurationTarget.Workspace` therefore writes into that generated, gitignored file
+  instead of a folder `.vscode/settings.json`; the primary folder stays first, so `workspaceFolders[0]` is still
+  `test/integration/workspace`.
 - `shigan.internal.computedHints` is an undocumented diagnostic command the integration tests depend on;
   `shigan.jumpToMatch` is invoked from inlay-hint parts and is intentionally not in `contributes.commands`.
 - vsce rejects a non-ASCII `publisher` (identifier only) — the human name lives in `author`. Packaging passes
@@ -130,9 +135,9 @@ git tag -d v0.0.1
   `fixture/` root, which would delete another suite's files.
 - `test/integration/**` runs in a real VSCode; `.vscode-test.mjs` globs `out/integration/**/*.test.js`, built from
   `test/integration/*.test.ts`.
-- `test/integration/{cpp,csharp}.test.ts` cover per-language routing, C# project symbols and the csproj watcher. The
-  test host runs with `--disable-extensions`, so `openFixture` calls `vscode.languages.setTextDocumentLanguage` to
-  force the language id.
+- `test/integration/{cpp,csharp}.test.ts` cover per-language routing, C# project symbols and the csproj watcher
+  (single-root create/change/delete plus a multi-root folder-add rebuild). The test host runs with
+  `--disable-extensions`, so `openFixture` calls `vscode.languages.setTextDocumentLanguage` to force the language id.
 - `vscode.executeInlayHintProvider` works in the test host: `extension.test.ts` uses it to assert the real provider
   output (label parts and tooltips), which the diagnostic command alone cannot cover.
 - `test/manual/**` is only for F5 self-testing.
