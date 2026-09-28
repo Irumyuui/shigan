@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { createVariableResolver, ShiganConfig } from './config';
+import { isRealFileScheme } from './core/document-paths';
 import { mergeCSharpMacros } from './core/csharp';
 import { parseCompileFlags } from './core/flags';
 import { computeHints } from './core/hints';
@@ -46,8 +47,28 @@ const hintCache = new Map<
  */
 const diagnosticsRevisions = new Map<string, number>();
 
+/**
+ * The document's lines, split once per document version. The tooltip renderer
+ * only needs a handful of lines around a jump target, but it needs them indexed
+ * by absolute line number, so the whole split is cached here next to the hint
+ * cache instead of being redone on every inlay-hint request.
+ */
+const sourceLinesCache = new Map<string, { version: number; lines: string[] }>();
+
 function revisionOf(uri: string): number {
   return diagnosticsRevisions.get(uri) ?? 0;
+}
+
+/**
+ * Registers the URI in `diagnosticsRevisions` if it is not there yet, so a
+ * later "diagnostics cleared" event (an empty URI list) reaches it. A document
+ * cached at revision 0 would otherwise never be bumped and could keep a stale
+ * activity answer.
+ */
+function ensureDiagnosticsRevision(uri: string): number {
+  const revision = revisionOf(uri);
+  if (!diagnosticsRevisions.has(uri)) diagnosticsRevisions.set(uri, revision);
+  return revision;
 }
 
 /**
@@ -67,11 +88,35 @@ export function resetRustDiagnosticsRevisions(): void {
   diagnosticsRevisions.clear();
 }
 
+/** Drops every cache entry for one document; called when it is closed. */
+export function forgetDocument(uri: string): void {
+  macroCache.delete(uri);
+  hintCache.delete(uri);
+  diagnosticsRevisions.delete(uri);
+  sourceLinesCache.delete(uri);
+}
+
+/**
+ * The document's lines, split once per version and reused across inlay-hint
+ * requests. Output is identical to `document.getText().split(/\r?\n/)`, but a
+ * cache hit skips both the `getText()` copy and the split.
+ */
+export function documentSourceLines(document: vscode.TextDocument): string[] {
+  const key = document.uri.toString();
+  const cached = sourceLinesCache.get(key);
+  if (cached && cached.version === document.version) return cached.lines;
+
+  const lines = document.getText().split(/\r?\n/);
+  sourceLinesCache.set(key, { version: document.version, lines });
+  return lines;
+}
+
 /** Drops all caches. Call when settings or the workspace folders change. */
 export function invalidate(): void {
   generation++;
   macroCache.clear();
   hintCache.clear();
+  sourceLinesCache.clear();
   clearCompileCommandCache();
   clearCsprojCache();
   clearCargoCache();
@@ -107,13 +152,19 @@ export function computeDocumentHints(
   if (config.show.length === 0) return [];
 
   const key = document.uri.toString();
+  const rust = languageKind(document.languageId) === 'rust';
+  // Registering a Rust key here is what lets a later "diagnostics cleared"
+  // (empty-URI) event reach a document that was never part of a non-empty one.
+  // Non-Rust documents never get a revision entry, so the blanket bump stays
+  // scoped to Rust and does not force an unrelated hint-cache miss.
+  const diagnosticsRevision = rust ? ensureDiagnosticsRevision(key) : revisionOf(key);
   const cached = hintCache.get(key);
   if (
     cached &&
     cached.version === document.version &&
     cached.generation === generation &&
     cached.languageId === document.languageId &&
-    cached.diagnosticsRevision === revisionOf(key) &&
+    cached.diagnosticsRevision === diagnosticsRevision &&
     cached.trigger === trigger &&
     cached.cursorOffset === cursorOffset
   ) {
@@ -123,7 +174,7 @@ export function computeDocumentHints(
   const text = document.getText();
 
   let hints: Hint[];
-  if (languageKind(document.languageId) === 'rust') {
+  if (rust) {
     const scanned = scanRust(text);
     const lines = text.split(/\r?\n/);
     const environment = rustEnvironment(document, config);
@@ -135,23 +186,23 @@ export function computeDocumentHints(
     // rust-analyzer's diagnostics are authoritative when present (or when the
     // extension is active); explicit `shigan.rust.cfg`-decided spans still win.
     // With no explicit entries nothing can be explicitly decided, so skip it.
-    const explicitAttributeLines = new Set<number>();
+    const decided =
+      environment.explicit && environment.explicit.size > 0
+        ? explicitDecidedSpans({ scanned, lines, environment, spans })
+        : [];
+    const explicitHeadLines = new Set(decided.flatMap((span) => span.headLines));
     const explicitInactiveLines = new Set<number>();
-    if (environment.explicit && environment.explicit.size > 0) {
-      for (const span of explicitDecidedSpans({ scanned, lines, environment, spans })) {
-        for (const line of span.attrLines) explicitAttributeLines.add(line);
-        if (span.inactive) {
-          for (let line = span.attrLine; line <= span.endLine; line++) {
-            explicitInactiveLines.add(line);
-          }
-        }
+    for (const span of decided) {
+      if (!span.inactive) continue;
+      for (let line = span.attrLine; line <= span.endLine; line++) {
+        explicitInactiveLines.add(line);
       }
     }
 
     const diagnostics = readRustDiagnostics(document);
     const merged = mergeRustInactiveLines({
       lexicalLines: model.inactiveLines ?? new Set<number>(),
-      explicitAttributeLines,
+      explicitHeadLines,
       explicitInactiveLines,
       diagnostics: diagnostics.ranges,
       authoritative: diagnostics.authoritative,
@@ -210,7 +261,7 @@ export function computeDocumentHints(
     languageId: document.languageId,
     trigger,
     cursorOffset,
-    diagnosticsRevision: revisionOf(key),
+    diagnosticsRevision,
     hints,
   });
   return hints;
@@ -231,7 +282,7 @@ function rustEnvironment(
     host: hostCfg(process.platform, process.arch).predicates,
   };
 
-  if (config.rustInheritCargo && document.uri.scheme === 'file') {
+  if (config.rustInheritCargo && isRealFileScheme(document.uri.scheme)) {
     const cargo = findCargoFeatures(document.uri.fsPath);
     if (cargo) {
       environment.features = {
@@ -262,7 +313,7 @@ function documentMacros(
     return cached.macros;
   }
 
-  const resolver = createVariableResolver(document.uri.fsPath);
+  const resolver = createVariableResolver(document.uri);
 
   let macros: Map<string, MacroDef>;
   if (syntax.id === 'csharp') {
@@ -270,7 +321,7 @@ function documentMacros(
     // csharp.define, then compile flags (which win). compile_commands.json is
     // not consulted for C#.
     const project =
-      config.csharpInheritProject && document.uri.scheme === 'file'
+      config.csharpInheritProject && isRealFileScheme(document.uri.scheme)
         ? findCsprojSymbols(document.uri.fsPath, {
             configuration: config.csharpConfiguration,
             targetFramework: config.csharpTargetFramework || undefined,
@@ -283,7 +334,7 @@ function documentMacros(
     );
   } else {
     const fileFlags =
-      config.inheritCompileCommands && document.uri.scheme === 'file'
+      config.inheritCompileCommands && isRealFileScheme(document.uri.scheme)
         ? findCompileCommandFlags(document.uri.fsPath) ?? []
         : [];
     macros = parseCompileFlags([...fileFlags, ...config.compileFlags], resolver, syntax).macros;

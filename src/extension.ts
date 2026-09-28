@@ -6,6 +6,7 @@ import { registerHoverProvider } from './render/hover';
 import {
   computeDocumentHints,
   DecorationTrigger,
+  forgetDocument,
   invalidate,
   invalidateProjectFiles,
   noteRustDiagnosticsChanged,
@@ -76,6 +77,9 @@ export function activate(context: vscode.ExtensionContext): void {
       if (config.trigger === 'cursor' || config.trigger === 'always') scheduleRefresh();
     }),
     vscode.window.onDidChangeActiveTextEditor(() => scheduleRefresh()),
+    vscode.workspace.onDidCloseTextDocument((document) =>
+      forgetDocument(document.uri.toString())
+    ),
     vscode.languages.onDidChangeDiagnostics((event) => {
       if (event.uris.length === 0) {
         // The API can fire with no URIs when diagnostics are cleared; bump

@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { ShiganConfig } from '../config';
 import { Hint } from '../core/types';
-import { computeDocumentHints, DecorationTrigger } from '../service';
+import { computeDocumentHints, DecorationTrigger, documentSourceLines } from '../service';
 import { buildJumpTooltip, TooltipLabels } from './tooltip';
 
 export const JUMP_COMMAND = 'shigan.jumpToMatch';
@@ -46,7 +46,7 @@ export class ShiganInlayHintsProvider implements vscode.InlayHintsProvider, vsco
     );
     if (visible.length === 0) return [];
 
-    const sourceLines = document.getText().split(/\r?\n/);
+    const sourceLines = documentSourceLines(document);
     return visible.map((hint) =>
       toInlayHint(document, hint, sourceLines, tooltipLabels(document.languageId))
     );

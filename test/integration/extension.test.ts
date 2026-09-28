@@ -19,6 +19,16 @@ async function setTrigger(value: string | undefined): Promise<void> {
     .update('trigger', value, vscode.ConfigurationTarget.Workspace);
 }
 
+/** Writes `shigan.show` and waits past the config-change debounce. */
+async function setShow(value: string[]): Promise<void> {
+  await vscode.workspace
+    .getConfiguration('shigan')
+    .update('show', value, vscode.ConfigurationTarget.Workspace);
+  await delay(150);
+}
+
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 suite('Shigan integration', () => {
   test('activates for a C document', async () => {
     const doc = await vscode.workspace.openTextDocument({ language: 'c', content: MAIN });
@@ -187,6 +197,73 @@ suite('Shigan integration', () => {
     assert.ok(editor, 'expected an active editor');
     assert.strictEqual(editor.selection.active.line, 0);
     assert.strictEqual(editor.selection.active.character, 15);
+  });
+
+  test('re-renders inlay hints after a settings change without reopening', async () => {
+    await setTrigger('always');
+    await setShow(['brackets', 'macros']);
+    try {
+      const doc = await vscode.workspace.openTextDocument({ language: 'c', content: CHAIN });
+      await vscode.window.showTextDocument(doc);
+      const range = new vscode.Range(0, 0, doc.lineCount, 0);
+
+      const before = await vscode.commands.executeCommand<vscode.InlayHint[]>(
+        'vscode.executeInlayHintProvider',
+        doc.uri,
+        range
+      );
+      assert.ok(
+        before.some((hint) => hint.position.line === 4),
+        `expected the #endif hint before the change: ${JSON.stringify(before.map((h) => h.position.line))}`
+      );
+
+      // Dropping macros must be picked up by the config listener and the
+      // provider must render the new output for the SAME, still-open document.
+      await setShow(['brackets']);
+      const after = await vscode.commands.executeCommand<vscode.InlayHint[]>(
+        'vscode.executeInlayHintProvider',
+        doc.uri,
+        range
+      );
+      assert.ok(
+        !after.some((hint) => hint.position.line === 4),
+        `macro hint should be gone after disabling macros: ${JSON.stringify(after.map((h) => h.position.line))}`
+      );
+
+      // ...and turning them back on restores it, still without reopening.
+      await setShow(['brackets', 'macros']);
+      const restored = await vscode.commands.executeCommand<vscode.InlayHint[]>(
+        'vscode.executeInlayHintProvider',
+        doc.uri,
+        range
+      );
+      assert.ok(
+        restored.some((hint) => hint.position.line === 4),
+        `expected the #endif hint back: ${JSON.stringify(restored.map((h) => h.position.line))}`
+      );
+    } finally {
+      await setShow(['brackets', 'macros']);
+      await setTrigger(undefined);
+    }
+  });
+
+  test('provides a conditional hint for an untitled Rust document', async () => {
+    await setTrigger('always');
+    try {
+      const doc = await vscode.workspace.openTextDocument({
+        language: 'rust',
+        content: '#[cfg(feature = "x")]\nmod m {\n}\n',
+      });
+      await vscode.window.showTextDocument(doc);
+      const hints = await vscode.commands.executeCommand<ComputedHint[]>(
+        'shigan.internal.computedHints'
+      );
+      const conditional = hints.find((hint) => hint.kind === 'conditional');
+      assert.ok(conditional, `expected a Rust conditional hint: ${JSON.stringify(hints)}`);
+      assert.strictEqual(conditional.inactive, false);
+    } finally {
+      await setTrigger(undefined);
+    }
   });
 });
 
