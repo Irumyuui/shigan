@@ -111,8 +111,31 @@ describe('tokenizer C# literals', () => {
     expect(bracketChars('var s = $"{ "a\\"b\\\\c" }"; }')).toBe('}');
   });
 
-  it('consumes an unterminated interpolation hole to EOF', () => {
+  it('consumes an unterminated non-verbatim hole to EOF when there is no newline', () => {
+    // No unescaped newline to stop at, so the literal runs to EOF.
     expect(bracketChars('var s = $"{ "a }')).toBe('');
     expect(bracketChars('var s = $"{ x')).toBe('');
+  });
+
+  it('stops an unterminated non-verbatim hole at the newline, keeping later brackets', () => {
+    // The hole is unterminated, but a non-verbatim literal cannot span lines,
+    // so the damage stays on its own line: the function pair below survives.
+    const text = 'var s = $"{ x\nvoid f() {\n    g();\n}\n';
+    expect(bracketChars(text)).toBe('(){()}');
+    expect(scan(text, CSHARP).brackets.map((b) => b.line)).toEqual([1, 1, 1, 2, 2, 3]);
+  });
+
+  it('does not let an escaped newline end an unterminated non-verbatim hole', () => {
+    // `\`+newline is a splice, so the continued hole is still opaque; only the
+    // following unescaped newline ends the literal. `(y)` must not leak.
+    const text = 'var s = $"{ x \\\n (y)\nif (a) { }';
+    expect(bracketChars(text)).toBe('(){}');
+  });
+
+  it('consumes an unterminated hole in a verbatim interpolated literal to EOF', () => {
+    // A verbatim interpolated literal may span lines, so it stays conservative
+    // and swallows the rest of the document rather than guessing.
+    expect(bracketChars('var s = $@"{ x\nvoid f() {\n    g();\n}\n')).toBe('');
+    expect(bracketChars('var s = @$"{ x\n{\n')).toBe('');
   });
 });

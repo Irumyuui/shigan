@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { computeHints } from '../../src/core/hints';
+import { syntaxFor } from '../../src/core/language';
 import { scan } from '../../src/core/lexer/tokenizer';
 
 const BRACKETS = { brackets: true, macros: false, trigger: 'always' } as const;
+const CSHARP = syntaxFor('csharp');
 
 describe('robustness', () => {
   it('handles a UTF-8 BOM', () => {
@@ -57,6 +59,29 @@ describe('robustness', () => {
     const text = `int g(void) {\n    return ${inner};\n}\n`;
     const hints = computeHints(text, BRACKETS);
     expect(hints).toEqual([expect.objectContaining({ line: 2, text: ' <- :1-3 int g(void)' })]);
+  });
+
+  it('resolves a moderately deep C# interpolation nesting correctly', () => {
+    const depth = 100;
+    const text =
+      'var s = ' + '$"{ '.repeat(depth) + 'x' + ' }"'.repeat(depth) + '; if (a) { }\n';
+    expect(scan(text, CSHARP).brackets.map((b) => b.char).join('')).toBe('(){}');
+  });
+
+  it('does not throw on 20 000 nested C# interpolation holes', () => {
+    const depth = 20000;
+    const text = 'var s = ' + '$"{ '.repeat(depth) + 'x' + ' }"'.repeat(depth) + ';\n';
+    const scanDeep = (): ReturnType<typeof scan> => scan(text, CSHARP);
+    expect(scanDeep).not.toThrow();
+
+    // Beyond the nesting cap the scanner consumes conservatively instead of
+    // guessing, so nothing from the pathological literal is reported.
+    const scanned = scanDeep();
+    expect(scanned.brackets).toEqual([]);
+
+    // The exception used to escape `computeDocumentHints`; the hint pipeline
+    // must survive the same document.
+    expect(() => computeHints(text, { ...BRACKETS, scanned })).not.toThrow();
   });
 
   it('ignores stray branch and endif directives', () => {

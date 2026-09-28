@@ -4,6 +4,19 @@ import { BracketToken, DirectiveToken, ScanResult } from '../types';
 const BRACKETS = new Set(['(', ')', '[', ']', '{', '}']);
 
 /**
+ * Recursion cap for nested C# literals.
+ *
+ * A hole inside an interpolated string can contain another interpolated
+ * literal, which recurses through `skipInterpolated` ↔
+ * `skipInterpolationHole` ↔ `skipNestedLiteral` ↔ `skipCSharpLiteral`. Without
+ * a cap a pathologically nested document (`$"{ $"{ … }" }"`) overflows the
+ * stack and the `RangeError` escapes every caller. Mirrors
+ * `MAX_EXPANSION_DEPTH` in `match/expression.ts`; beyond the cap the scanner
+ * consumes the rest conservatively instead of recursing further.
+ */
+const MAX_LITERAL_DEPTH = 256;
+
+/**
  * Lexical scanner for C source.
  *
  * It performs no parsing, but it correctly skips over everything that must not
@@ -50,6 +63,25 @@ export function scan(text: string, syntax: LanguageSyntax = C_SYNTAX): ScanResul
     let p = k + 1;
     if (p < n && text[p] === '\r') p++;
     return p < n && text[p] === '\n' ? p + 1 : -1;
+  };
+
+  /**
+   * Index of the first unescaped newline at or after `k`, or `n` when the rest
+   * of the document has none. Mirrors the non-verbatim literal rule: a
+   * `\`+newline splice is not a line break, so it is skipped.
+   */
+  const lineLimit = (k: number): number => {
+    let j = k;
+    while (j < n) {
+      if (text[j] === '\\') {
+        const cont = skipSplice(j);
+        j = cont >= 0 ? cont : j + 1;
+        continue;
+      }
+      if (text[j] === '\n') return j;
+      j++;
+    }
+    return n;
   };
 
   /**
@@ -126,12 +158,13 @@ export function scan(text: string, syntax: LanguageSyntax = C_SYNTAX): ScanResul
    * an interpolation hole. Char literals reuse `skipQuoted`; C# `@`/`$` forms
    * recurse through `skipCSharpLiteral`, so a literal nested in a hole cannot
    * end the enclosing literal early. Returns `k` when `k` does not start a
-   * literal (e.g. a verbatim identifier `@class`).
+   * literal (e.g. a verbatim identifier `@class`). `depth` is the hole nesting
+   * level, checked by `skipInterpolationHole` against `MAX_LITERAL_DEPTH`.
    */
-  const skipNestedLiteral = (k: number): number => {
+  const skipNestedLiteral = (k: number, depth: number): number => {
     const c = text[k];
     if (c === "'") return skipQuoted(k, "'", syntax);
-    const cs = skipCSharpLiteral(k);
+    const cs = skipCSharpLiteral(k, depth);
     if (cs >= 0) return cs;
     return c === '"' ? skipQuoted(k, '"', syntax) : k;
   };
@@ -139,27 +172,47 @@ export function scan(text: string, syntax: LanguageSyntax = C_SYNTAX): ScanResul
   /**
    * End index (exclusive) of the interpolation hole whose `{` is at `k`.
    * Consumes balanced `{`/`}` while skipping nested literals and comments, so
-   * brackets inside the hole never leak as ordinary code. An unterminated hole
-   * consumes the rest of the document.
+   * brackets inside the hole never leak as ordinary code.
+   *
+   * A non-verbatim literal cannot span lines, so an unterminated hole stops at
+   * the first unescaped newline (`\`+newline splices do not count) and later
+   * code keeps its brackets. A verbatim literal may span lines, so its
+   * unterminated hole consumes the rest of the document. `depth` bounds the
+   * mutual recursion with `skipInterpolated`/`skipNestedLiteral`; at the cap the
+   * hole is consumed conservatively (line-scoped for non-verbatim, EOF for
+   * verbatim) instead of recursing further, so `scan` never throws.
    */
-  const skipInterpolationHole = (k: number): number => {
+  const skipInterpolationHole = (k: number, verbatim: boolean, depth: number): number => {
+    if (depth >= MAX_LITERAL_DEPTH) {
+      return verbatim ? n : lineLimit(k);
+    }
     let j = k + 1;
-    let depth = 1;
+    let braces = 1;
     while (j < n) {
       const ch = text[j];
+      if (ch === '\\') {
+        const cont = skipSplice(j);
+        j = cont >= 0 ? cont : j + 1;
+        continue;
+      }
+      if (ch === '\n') {
+        if (!verbatim) return j;
+        j++;
+        continue;
+      }
       if (ch === '{') {
-        depth++;
+        braces++;
         j++;
         continue;
       }
       if (ch === '}') {
-        depth--;
+        braces--;
         j++;
-        if (depth === 0) return j;
+        if (braces === 0) return j;
         continue;
       }
       if (ch === '"' || ch === "'" || ch === '@' || ch === '$') {
-        const end = skipNestedLiteral(j);
+        const end = skipNestedLiteral(j, depth + 1);
         j = end > j ? end : j + 1;
         continue;
       }
@@ -182,9 +235,11 @@ export function scan(text: string, syntax: LanguageSyntax = C_SYNTAX): ScanResul
    * doubling over backslash escapes. A `{` that is not `{{` opens an
    * interpolation hole consumed by `skipInterpolationHole`; `{{` and `}}` are
    * literal escapes. An unterminated non-verbatim literal stops at the next
-   * unescaped newline, a verbatim one consumes the rest of the document.
+   * unescaped newline (including when the unterminated part is a hole), a
+   * verbatim one consumes the rest of the document. `depth` bounds the hole
+   * recursion.
    */
-  const skipInterpolated = (quotePos: number, verbatim: boolean): number => {
+  const skipInterpolated = (quotePos: number, verbatim: boolean, depth: number): number => {
     let j = quotePos + 1;
     while (j < n) {
       const ch = text[j];
@@ -210,7 +265,7 @@ export function scan(text: string, syntax: LanguageSyntax = C_SYNTAX): ScanResul
           j += 2;
           continue;
         }
-        j = skipInterpolationHole(j);
+        j = skipInterpolationHole(j, verbatim, depth);
         continue;
       }
       if (ch === '}' && text[j + 1] === '}') {
@@ -235,7 +290,7 @@ export function scan(text: string, syntax: LanguageSyntax = C_SYNTAX): ScanResul
    * A plain `"..."` (no prefix, single quote) returns -1 so the generic string
    * handling, which behaves identically, keeps owning it.
    */
-  const skipCSharpLiteral = (k: number): number => {
+  const skipCSharpLiteral = (k: number, depth = 0): number => {
     let p = k;
     let dollars = 0;
     let verbatim = false;
@@ -280,7 +335,7 @@ export function scan(text: string, syntax: LanguageSyntax = C_SYNTAX): ScanResul
     if (dollars > 0) {
       // Interpolated string: hole-aware so a `"`/brace inside `{...}` does not
       // end the literal early.
-      return skipInterpolated(p, verbatim);
+      return skipInterpolated(p, verbatim, depth);
     }
 
     if (verbatim) {
