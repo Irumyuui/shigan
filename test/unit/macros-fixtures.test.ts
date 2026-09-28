@@ -14,36 +14,38 @@ interface ExpectedHint {
   inactive?: boolean;
 }
 
-/** Fixture extension -> VSCode language id. */
-const LANGUAGES: Record<string, string> = { '.c': 'c', '.cpp': 'cpp', '.cs': 'csharp' };
-const EXTENSIONS = Object.keys(LANGUAGES);
+/** Fixture source extensions; the language itself comes from the directory. */
+const SOURCE_EXTENSIONS = ['.c', '.cpp', '.cs'];
 
-const macrosDir = join(process.cwd(), 'test', 'fixtures', 'macros');
+/** Languages, in directory order: `test/fixtures/<lang>/macros/`. */
+const LANGUAGES = ['c', 'cpp', 'csharp'];
 
 describe('macro fixtures', () => {
-  for (const file of readdirSync(macrosDir).filter((f) => EXTENSIONS.includes(extname(f)))) {
-    it(file, () => {
-      const text = readFileSync(join(macrosDir, file), 'utf8');
-      const languageId = LANGUAGES[extname(file)];
-      const expected: ExpectedHint[] = JSON.parse(
-        readFileSync(join(macrosDir, replaceExtension(file, '.expected.json')), 'utf8')
-      );
-      const actual = computeHints(text, {
-        brackets: false,
-        macros: true,
-        trigger: 'always',
-        showRange: true,
-        showLabel: true,
-        ...predicates(text, seedFor(file), languageId),
-        scanned: scan(text, syntaxFor(languageId)),
-      }).map((hint: Hint) => ({
-        line: hint.line,
-        text: hint.text,
-        kind: hint.kind,
-        inactive: hint.inactive,
-      }));
-      expect(actual).toEqual(expected);
-    });
+  for (const languageId of LANGUAGES) {
+    const dir = join(process.cwd(), 'test', 'fixtures', languageId, 'macros');
+    for (const file of readdirSync(dir).filter((f) => SOURCE_EXTENSIONS.includes(extname(f)))) {
+      it(`${languageId}/macros/${file}`, () => {
+        const text = readFileSync(join(dir, file), 'utf8');
+        const expected: ExpectedHint[] = JSON.parse(
+          readFileSync(join(dir, replaceExtension(file, '.expected.json')), 'utf8')
+        );
+        const actual = computeHints(text, {
+          brackets: false,
+          macros: true,
+          trigger: 'always',
+          showRange: true,
+          showLabel: true,
+          ...predicates(text, seedFor(dir, file), languageId),
+          scanned: scan(text, syntaxFor(languageId)),
+        }).map((hint: Hint) => ({
+          line: hint.line,
+          text: hint.text,
+          kind: hint.kind,
+          inactive: hint.inactive,
+        }));
+        expect(actual).toEqual(expected);
+      });
+    }
   }
 });
 
@@ -57,7 +59,7 @@ function replaceExtension(file: string, suffix: string): string {
  * defines macros before the conditional evaluation runs. The fixture's own
  * extension is replaced, so it works for `.c`, `.cpp` and `.cs` alike.
  */
-function seedFor(file: string): Record<string, string> {
-  const seedPath = join(macrosDir, replaceExtension(file, '.macros.json'));
+function seedFor(dir: string, file: string): Record<string, string> {
+  const seedPath = join(dir, replaceExtension(file, '.macros.json'));
   return existsSync(seedPath) ? JSON.parse(readFileSync(seedPath, 'utf8')) : {};
 }

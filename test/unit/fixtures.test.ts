@@ -16,31 +16,33 @@ interface ExpectedHint {
   inactive?: boolean;
 }
 
-/** Fixture extension -> VSCode language id. */
-const LANGUAGES: Record<string, string> = { '.c': 'c', '.cpp': 'cpp', '.cs': 'csharp' };
-const EXTENSIONS = Object.keys(LANGUAGES);
+/** Fixture source extensions; the language itself comes from the directory. */
+const SOURCE_EXTENSIONS = ['.c', '.cpp', '.cs'];
 
-const bracketsDir = join(process.cwd(), 'test', 'fixtures', 'brackets');
+/** Languages, in directory order: `test/fixtures/<lang>/brackets/`. */
+const LANGUAGES = ['c', 'cpp', 'csharp'];
 
 describe('bracket fixtures', () => {
-  for (const file of readdirSync(bracketsDir).filter((f) => EXTENSIONS.includes(extname(f)))) {
-    it(file, () => {
-      const text = readFileSync(join(bracketsDir, file), 'utf8');
-      const languageId = LANGUAGES[extname(file)];
-      const expected: ExpectedHint[] = JSON.parse(
-        readFileSync(join(bracketsDir, replaceExtension(file, '.expected.json')), 'utf8')
-      );
-      const actual = computeHints(text, {
-        brackets: true,
-        macros: false,
-        trigger: 'always',
-        showRange: true,
-        showLabel: true,
-        ...predicates(text, {}, languageId),
-        scanned: scan(text, syntaxFor(languageId)),
-      }).map(shape);
-      expect(actual).toEqual(expected);
-    });
+  for (const languageId of LANGUAGES) {
+    const dir = join(process.cwd(), 'test', 'fixtures', languageId, 'brackets');
+    for (const file of readdirSync(dir).filter((f) => SOURCE_EXTENSIONS.includes(extname(f)))) {
+      it(`${languageId}/brackets/${file}`, () => {
+        const text = readFileSync(join(dir, file), 'utf8');
+        const expected: ExpectedHint[] = JSON.parse(
+          readFileSync(join(dir, replaceExtension(file, '.expected.json')), 'utf8')
+        );
+        const actual = computeHints(text, {
+          brackets: true,
+          macros: false,
+          trigger: 'always',
+          showRange: true,
+          showLabel: true,
+          ...predicates(text, {}, languageId),
+          scanned: scan(text, syntaxFor(languageId)),
+        }).map(shape);
+        expect(actual).toEqual(expected);
+      });
+    }
   }
 });
 
