@@ -147,7 +147,7 @@ createFixtureSuite(
   test('C# project DefineConstants drive #if DEBUG', async () => {
     // Match inactive branches too, so their hints are observable (flagged
     // `inactive`) instead of being dropped from the matching.
-    await set('preprocessor.skipInactiveBrackets', false);
+    await set('inactive.skipBrackets', false);
 
     const document = await openFixture(fixture.dir, 'probe.cs', 'csharp');
     assert.strictEqual(document.languageId, 'csharp');
@@ -197,7 +197,7 @@ createFixtureSuite(
   test('shigan.csharp.define selects #if symbols', async () => {
     // Match inactive branches too, so the flag is observable rather than the
     // hint being dropped (`skipInactiveBrackets` defaults to true).
-    await set('preprocessor.skipInactiveBrackets', false);
+    await set('inactive.skipBrackets', false);
     await openFixture(fixture.dir, 'probe-settings.cs', 'csharp');
 
     const before = bracketAt(await computedHints(), 6);
@@ -210,22 +210,22 @@ createFixtureSuite(
     assert.strictEqual(after.inactive, false, 'csharp.define should make the branch live');
   });
 
-  test('shigan.compileFlags select #if symbols for C#', async () => {
-    await set('preprocessor.skipInactiveBrackets', false);
+  test('shigan.csharp.compileFlags select #if symbols for C#', async () => {
+    await set('inactive.skipBrackets', false);
     await openFixture(fixture.dir, 'probe-settings.cs', 'csharp');
 
     const before = bracketAt(await computedHints(), 17);
     assert.ok(before, 'the #if VIACOMPILER body should be hinted');
     assert.strictEqual(before.inactive, true, 'VIACOMPILER is not defined yet');
 
-    await set('compileFlags', ['-DVIACOMPILER']);
+    await set('csharp.compileFlags', ['-DVIACOMPILER']);
     const after = bracketAt(await computedHints(), 17);
     assert.ok(after, 'the #if VIACOMPILER body should still be hinted');
-    assert.strictEqual(after.inactive, false, 'compileFlags should make the branch live');
+    assert.strictEqual(after.inactive, false, 'csharp.compileFlags should make the branch live');
   });
 
   test('shigan.csharp.targetFramework drives implicit framework symbols', async () => {
-    await set('preprocessor.skipInactiveBrackets', false);
+    await set('inactive.skipBrackets', false);
     await openFixture(fixture.dir, 'probe-settings.cs', 'csharp');
 
     const inherited = bracketAt(await computedHints(), 39);
@@ -239,7 +239,7 @@ createFixtureSuite(
   });
 
   test('shigan.csharp.configuration selects the project PropertyGroup', async () => {
-    await set('preprocessor.skipInactiveBrackets', false);
+    await set('inactive.skipBrackets', false);
     await openFixture(fixture.dir, 'probe-settings.cs', 'csharp');
 
     const debug = bracketAt(await computedHints(), 28);
@@ -335,7 +335,7 @@ createFixtureSuite(
   { 'watch.cs': WATCH_PROBE },
   (fixture) => {
   test('editing Watch.csproj flips the #if DEBUG body without a reload', async () => {
-    await set('preprocessor.skipInactiveBrackets', false);
+    await set('inactive.skipBrackets', false);
     writeFileSync(join(fixture.dir, 'Watch.csproj'), WATCH_CSPROJ_DEBUG);
     await openFixture(fixture.dir, 'watch.cs', 'csharp');
     await waitForDebugBranch(false, 'DEBUG defined by the csproj');
@@ -346,7 +346,7 @@ createFixtureSuite(
   });
 
   test('deleting Watch.csproj drops the project symbols', async () => {
-    await set('preprocessor.skipInactiveBrackets', false);
+    await set('inactive.skipBrackets', false);
     // Force fresh watcher events regardless of what a previous test left behind.
     rmSync(join(fixture.dir, 'Watch.csproj'), { force: true });
     writeFileSync(join(fixture.dir, 'Watch.csproj'), WATCH_CSPROJ_DEBUG);
@@ -358,7 +358,7 @@ createFixtureSuite(
   });
 
   test('creating Watch.csproj defines DEBUG without a reload', async () => {
-    await set('preprocessor.skipInactiveBrackets', false);
+    await set('inactive.skipBrackets', false);
     // Deterministic "no project" start: even if an earlier test failed before
     // its own delete (or left a stale project cache), writing then removing the
     // csproj guarantees the watcher fires and the cache is cleared.
@@ -417,7 +417,7 @@ suite('Shigan C# project watching (multi-root)', () => {
 
     await withWorkspaceWritable(async () => {
       await applyBaseline();
-      await set('preprocessor.skipInactiveBrackets', false);
+      await set('inactive.skipBrackets', false);
     });
   });
 
@@ -446,7 +446,7 @@ suite('Shigan C# project watching (multi-root)', () => {
   });
 
   test('adding a workspace folder rebuilds the csproj watcher', async () => {
-    await set('preprocessor.skipInactiveBrackets', false);
+    await set('inactive.skipBrackets', false);
     await openFixture(multirootDir, 'multi.cs', 'csharp');
     await waitForDebugBranch(false, 'DEBUG defined by Multi.csproj');
 

@@ -37,16 +37,17 @@ and preprocessor conditionals.
   `#elif` / `#elifdef` / `#elifndef` / `#else` separate branches; `#endif`
   closes it. Each branch line references the preceding branch, and an `#endif`
   in a chain also references the opener.
-- **Macros** come from `shigan.compileFlags` and, optionally, the nearest
-  `compile_commands.json`; `#define` / `#undef` in the file are tracked. A
-  conservative evaluator resolves `#if`: a literal `0`, and an undefined
-  identifier (which the preprocessor also reads as `0`), are decided inactive;
-  only a condition the evaluator cannot parse at all stays unknown and live.
+- **Macros** come from the per-language `shigan.<lang>.compileFlags` and,
+  optionally, the nearest `compile_commands.json`; `#define` / `#undef` in the
+  file are tracked. A conservative evaluator resolves `#if`: a literal `0`, and
+  an undefined identifier (which the preprocessor also reads as `0`), are
+  decided inactive; only a condition the evaluator cannot parse at all stays
+  unknown and live.
 - **`always`** shows every multi-line bracket pair and every directive pair,
   including directives in a fully inactive `#if 0` block. Inactive code is
-  handled by settings: `skipInactiveBrackets` keeps brackets out of matching,
-  `skipInactiveDirectives` hides directive hints, and `markInactive` flags
-  them.
+  handled by settings: `shigan.inactive.skipBrackets` keeps brackets out of
+  matching, `shigan.inactive.skipDirectives` hides directive hints, and
+  `shigan.inactive.markInactive` flags them.
 
 C and C++ are lexed directly, including C++ raw string literals (`R"(...)"`).
 For C#, the conditional symbols come from the `DefineConstants` of the nearest
@@ -70,41 +71,73 @@ they follow `editor.inlayHints.enabled` — there is no colour/opacity setting.
 
 ## Settings
 
+Each language is configured independently: the same knob can differ between C,
+C++ and C#. Settings live in one category per language in the settings UI.
+
+### General
+
 | Key | Default | Description |
 | --- | --- | --- |
 | `shigan.enable` | `true` | Master switch |
 | `shigan.languages` | `["c","cpp","csharp","rust"]` | Active language ids |
 | `shigan.trigger` | `"cursor"` | `cursor` / `always` / `hover` / `off`, for every hint kind |
-| `shigan.show` | `["brackets","macros"]` | Which kinds to hint; `macros` gates `#if`/`#ifdef`/`#ifndef`/`#elif`/`#elifdef`/`#elifndef`/`#else`/`#endif`, `#region`/`#endregion` and the Rust `#[cfg]` hints |
-| `shigan.compileFlags` | `[]` | Compiler-style flags, e.g. `["-DDEBUG=1","-Iinclude","-std=c11"]` |
-| `shigan.inheritCompileCommands` | `false` | Also read `-D`/`-I`/`-std` from `compile_commands.json` |
-| `shigan.csharp.define` | `[]` | Extra C# symbols for `#if`, e.g. `["TRACE","DEBUG"]` |
-| `shigan.csharp.inheritProject` | `true` | Read `DefineConstants` from the nearest `.csproj`/`Directory.Build.props` |
-| `shigan.csharp.configuration` | `"Debug"` | `$(Configuration)` used when evaluating the C# project file |
-| `shigan.csharp.targetFramework` | `""` | Target framework (e.g. `net8.0`); empty = read from the project file |
-| `shigan.rust.cfg` | `[]` | Extra Rust cfg entries for `#[cfg]`, e.g. `["unix"]`; `-name` forces false |
-| `shigan.rust.inheritCargo` | `true` | Read feature facts from the nearest `Cargo.toml` |
-| `shigan.preprocessor.trackFileDefines` | `true` | Evaluate `#define`/`#undef` found in the file |
-| `shigan.preprocessor.skipInactiveBrackets` | `true` | Do not match brackets in inactive branches |
-| `shigan.preprocessor.skipInactiveDirectives` | `false` | Hide directive hints that refer to an inactive branch/block |
-| `shigan.preprocessor.markInactive` | `true` | Append `(inactive)` to hints that refer to an inactive branch/block |
+| `shigan.show` | `["brackets","macros"]` | Which kinds to hint; `macros` gates `#if`/`#ifdef`/`#ifndef`/`#elif`/`#elifdef`/`#elifndef`/`#else`/`#endif`, `#region`/`#endregion` and the Rust `#[cfg]` hints. Stays exactly two values (no `conditional`) |
+| `shigan.inactive.skipBrackets` | `true` | Do not match brackets in inactive branches |
+| `shigan.inactive.skipDirectives` | `false` | Hide directive hints that refer to an inactive branch/block |
+| `shigan.inactive.markInactive` | `true` | Append `(inactive)` to hints that refer to an inactive branch/block |
 | `shigan.showRange` | `true` | Include the `:start-end` range |
 | `shigan.showRangeThreshold` | `0` | Hide the range when the pair is at most N lines apart (`0` = always show) |
 | `shigan.showLabel` | `true` | Include the opening statement / directive text |
 
+### C (`shigan.c.*`)
+
+| Key | Default | Description |
+| --- | --- | --- |
+| `shigan.c.trackFileDefines` | `true` | Evaluate `#define`/`#undef` found in the file |
+| `shigan.c.compileFlags` | `[]` | Compiler-style flags, e.g. `["-DDEBUG=1","-Iinclude","-std=c11"]` |
+| `shigan.c.inheritCompileCommands` | `false` | Also read `-D`/`-I`/`-std` from `compile_commands.json` |
+
+### C++ (`shigan.cpp.*`)
+
+| Key | Default | Description |
+| --- | --- | --- |
+| `shigan.cpp.trackFileDefines` | `true` | Evaluate `#define`/`#undef` found in the file |
+| `shigan.cpp.compileFlags` | `[]` | Compiler-style flags, e.g. `["-DDEBUG=1","-Iinclude","-std=c++20"]` |
+| `shigan.cpp.inheritCompileCommands` | `false` | Also read `-D`/`-I`/`-std` from `compile_commands.json` |
+
+### C# (`shigan.csharp.*`)
+
+| Key | Default | Description |
+| --- | --- | --- |
+| `shigan.csharp.trackFileDefines` | `true` | Evaluate `#define`/`#undef` found in the file |
+| `shigan.csharp.compileFlags` | `[]` | Compiler-style flags used as the highest-precedence C# symbols |
+| `shigan.csharp.define` | `[]` | Extra C# symbols for `#if`, e.g. `["TRACE","DEBUG"]` |
+| `shigan.csharp.inheritProject` | `true` | Read `DefineConstants` from the nearest `.csproj`/`Directory.Build.props` |
+| `shigan.csharp.configuration` | `"Debug"` | `$(Configuration)` used when evaluating the C# project file |
+| `shigan.csharp.targetFramework` | `""` | Target framework (e.g. `net8.0`); empty = read from the project file |
+
+C# has no `inheritCompileCommands`: it never reads `compile_commands.json`.
+
+### Rust (`shigan.rust.*`)
+
+| Key | Default | Description |
+| --- | --- | --- |
+| `shigan.rust.cfg` | `[]` | Extra Rust cfg entries for `#[cfg]`, e.g. `["unix"]`; `-name` forces false |
+| `shigan.rust.inheritCargo` | `true` | Read feature facts from the nearest `Cargo.toml` |
+
 `${workspaceFolder}`, `${fileDirname}` and `${env:NAME}` are expanded inside
-`shigan.compileFlags`.
+every `shigan.*.compileFlags`.
 
 Basic settings:
 
 ```json
 {
   "shigan.trigger": "always",
-  "shigan.inheritCompileCommands": true,
+  "shigan.c.inheritCompileCommands": true,
   "shigan.showRange": true,
   "shigan.showLabel": true,
   "shigan.showRangeThreshold": 0,
-  "shigan.preprocessor.skipInactiveDirectives": false
+  "shigan.inactive.skipDirectives": false
 }
 ```
 
@@ -112,8 +145,9 @@ Basic settings:
 
 - Brackets produced by macro expansion (`#define OPEN {` then `OPEN`) cannot be
   paired from source.
-- Macros defined in included headers are unknown unless supplied via
-  `shigan.compileFlags`.
+- Macros defined in included headers are unknown unless supplied via the
+  per-language `shigan.c.compileFlags` / `shigan.cpp.compileFlags` /
+  `shigan.csharp.compileFlags`.
 - Trigraphs (`??=`) and digraphs (`<%`/`%>`, `<:`/`:>`) are not translated, so
   `??=if 1` is not a directive and `<% … %>` blocks get no brace hints.
 - Hints are inlay hints: the theme and `editor.inlayHints.enabled` control

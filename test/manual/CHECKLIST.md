@@ -37,16 +37,20 @@
 
 ## Settings
 
+Settings are per language (`shigan.c.*`, `shigan.cpp.*`, `shigan.csharp.*`, `shigan.rust.*`),
+so a knob can differ between languages in the same window.
+
 - [ ] `shigan.enable = false` removes all hints
 - [ ] `shigan.show = ["brackets"]` leaves only bracket hints (and vice versa)
 - [ ] `shigan.showRange = false` drops the `:a-b` part
 - [ ] `shigan.showRangeThreshold = 2` drops the `:a-b` part for pairs that are
       at most two lines apart (e.g. `if (x) {` / `}` on adjacent lines)
 - [ ] `shigan.showLabel = false` drops the trailing label
-- [ ] `shigan.preprocessor.skipInactiveDirectives = true` hides the
+- [ ] `shigan.inactive.skipDirectives = true` hides the
       `#if 0 ... #endif` hint entirely
-- [ ] `shigan.compileFlags = ["-DFEATURE_A"]` turns the `#else` branch of
-      `feature_a` inactive and the `#ifdef` branch active
+- [ ] `shigan.c.compileFlags = ["-DFEATURE_A"]` turns the `#else` branch of the
+      C `feature_a` sample inactive and the `#ifdef` branch active, without
+      affecting a `.cpp` file in the same window
 
 ## C++ (`test/manual/sample.cpp`)
 

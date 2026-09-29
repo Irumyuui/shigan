@@ -88,10 +88,14 @@ git tag -d v0.0.1
   - `src/rust-diagnostics.ts` reads `vscode.languages.getDiagnostics` for the document; `src/service.ts` keys the
     hint cache on a per-URI `diagnosticsRevision` bumped via `noteRustDiagnosticsChanged` on
     `onDidChangeDiagnostics`, so hover and the diagnostic command never serve a stale activity answer.
-- `src/service.ts` owns macros, conditional evaluation and the caches. Macro sources are per language: C/C++ use
-  `compileFlags` + optional `compile_commands.json`; C# uses project symbols + `shigan.csharp.define` + `compileFlags`
-  and never `compile_commands.json`. Rust uses `shigan.rust.cfg` + a host inference + the nearest `Cargo.toml`. The
-  inlay-hint provider, hover provider and diagnostic command all go through `computeDocumentHints`; settings changes
+- `src/service.ts` owns macros, conditional evaluation and the caches. Macro sources are per language:
+  C and C++ use their own `shigan.c.*` / `shigan.cpp.*` group (`trackFileDefines`, `compileFlags`,
+  `inheritCompileCommands` + optional `compile_commands.json`); C# uses `shigan.csharp.*`
+  (`trackFileDefines`, `compileFlags`, `define`, project symbols) and never `compile_commands.json`.
+  Rust uses `shigan.rust.cfg` + `shigan.rust.inheritCargo` + a host inference + the nearest `Cargo.toml`.
+  `languageSettingsFor(config, languageKind(languageId))` resolves the C-family group (C# returns
+  `inheritCompileCommands: false` because it has no such setting). The inlay-hint provider, hover provider
+  and diagnostic command all go through `computeDocumentHints`; settings changes
   must call `invalidate()` (which also clears the csproj and cargo caches).
 - `src/extension.ts` watches `**/*.csproj` AND `**/Cargo.toml` per workspace folder (create/change/delete) with its own debounce
   (`projectTimer`, deliberately separate from the cursor-triggered `refreshTimer`) and calls
@@ -120,8 +124,15 @@ git tag -d v0.0.1
   while `package.json` references it as `%key%`. Missing entries fall back to English silently, so
   `test/unit/localization.test.ts` fails on any drift — including `vscode.l10n.t` calls that are not string
   literals (a computed message cannot be extracted).
-- **A new setting touches 6+ files**: `package.json`, the three `package.nls*.json`, `src/core/settings.ts`,
-  `test/unit/config.test.ts`, `test/integration/settings.test.ts` (plus README).
+- **A new setting touches 6+ files**: `package.json` (the matching
+  `contributes.configuration` category), the three `package.nls*.json`, `src/core/settings.ts`,
+  `test/unit/config.test.ts`, `test/integration/settings.test.ts` + `test/integration/support.ts` (plus README).
+  The manifest is an ARRAY of titled per-language categories; `config.test.ts` flattens it and enforces
+  "every key in exactly one category", the no-dotted-prefix rule and that retired ids never reappear.
+  Settings are per language (`shigan.c.*` / `shigan.cpp.*` / `shigan.csharp.*` / `shigan.rust.*`), so a knob
+  split across languages multiplies the manifest properties, the three nls files and the defaults in
+  `src/core/settings.ts` — a missed one fails the drift/localization tests, which is intended.
+  `shigan.show` is deliberately frozen at two values (`brackets`/`macros`).
 - **Language support is on by default**: `shigan.languages` defaults to `["c","cpp","csharp","rust"]` and `package.json`
   lists `onLanguage:` for each. Adding a language touches `src/core/language.ts` (the profile/kind), both of those
   places, `src/core/settings.ts` and `test/unit/config.test.ts`.

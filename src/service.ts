@@ -12,6 +12,7 @@ import { featureFacts, hostCfg, parseRustCfgEntries, RustCfgEnvironment } from '
 import { explicitDecidedSpans, rustConditionals } from './core/match/rust/conditionals';
 import { applyMergedInactivity, mergeRustInactiveLines } from './core/match/rust/diagnostics';
 import { pairCfgItems } from './core/match/rust/items';
+import { languageSettingsFor } from './core/settings';
 import { Hint, MacroDef, Trigger } from './core/types';
 import { clearCargoCache, findCargoFeatures, hasAncestorManifest } from './cargo-source';
 import { clearCsprojCache, findCsprojSymbols } from './csproj-source';
@@ -261,7 +262,7 @@ function cFamilyDocumentHints(
   const macros = documentMacros(document, config, syntax);
   const evaluation = evaluateConditionals(scanned.directives, {
     macros,
-    trackFileDefines: config.trackFileDefines,
+    trackFileDefines: languageSettingsFor(config, languageKind(document.languageId)).trackFileDefines,
     syntax,
   });
   // Activity is only known to the evaluator; build the model here so the
@@ -294,11 +295,11 @@ function rustEnvironment(
   config: ShiganConfig
 ): RustCfgEnvironment {
   const environment: RustCfgEnvironment = {
-    explicit: parseRustCfgEntries(config.rustCfg),
+    explicit: parseRustCfgEntries(config.rust.cfg),
     host: hostCfg(process.platform, process.arch).predicates,
   };
 
-  if (config.rustInheritCargo && isRealFileScheme(document.uri.scheme)) {
+  if (config.rust.inheritCargo && isRealFileScheme(document.uri.scheme)) {
     const cargo = findCargoFeatures(document.uri.fsPath);
     if (cargo) {
       environment.features = featureFacts({
@@ -331,30 +332,32 @@ function documentMacros(
   }
 
   const resolver = createVariableResolver(document.uri);
+  const kind = languageKind(document.languageId);
+  const settings = languageSettingsFor(config, kind);
 
   let macros: Map<string, MacroDef>;
-  if (syntax.id === 'csharp') {
+  if (kind === 'csharp') {
     // C# symbols, lowest precedence first: project file, then the user's
     // csharp.define, then compile flags (which win). compile_commands.json is
     // not consulted for C#.
     const project =
-      config.csharpInheritProject && isRealFileScheme(document.uri.scheme)
+      config.csharp.inheritProject && isRealFileScheme(document.uri.scheme)
         ? findCsprojSymbols(document.uri.fsPath, {
-            configuration: config.csharpConfiguration,
-            targetFramework: config.csharpTargetFramework || undefined,
+            configuration: config.csharp.configuration,
+            targetFramework: config.csharp.targetFramework || undefined,
           })
         : undefined;
     macros = mergeCSharpMacros(
       project?.symbols,
-      config.csharpDefine,
-      parseCompileFlags(config.compileFlags, resolver, syntax).macros
+      config.csharp.define,
+      parseCompileFlags(settings.compileFlags, resolver, syntax).macros
     );
   } else {
     const fileFlags =
-      config.inheritCompileCommands && isRealFileScheme(document.uri.scheme)
+      settings.inheritCompileCommands && isRealFileScheme(document.uri.scheme)
         ? findCompileCommandFlags(document.uri.fsPath) ?? []
         : [];
-    macros = parseCompileFlags([...fileFlags, ...config.compileFlags], resolver, syntax).macros;
+    macros = parseCompileFlags([...fileFlags, ...settings.compileFlags], resolver, syntax).macros;
   }
 
   macroCache.set(key, { version: document.version, generation, languageId, macros });

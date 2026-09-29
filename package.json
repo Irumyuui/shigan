@@ -37,141 +37,204 @@
     "workspace"
   ],
   "contributes": {
-    "configuration": {
-      "title": "%configuration.title%",
-      "properties": {
-        "shigan.enable": {
-          "type": "boolean",
-          "default": true,
-          "description": "%shigan.enable.description%"
-        },
-        "shigan.languages": {
-          "type": "array",
-          "items": {
-            "type": "string"
+    "configuration": [
+      {
+        "title": "%configuration.title%",
+        "properties": {
+          "shigan.enable": {
+            "type": "boolean",
+            "default": true,
+            "description": "%shigan.enable.description%"
           },
-          "default": [
-            "c",
-            "cpp",
-            "csharp",
-            "rust"
-          ],
-          "description": "%shigan.languages.description%"
-        },
-        "shigan.trigger": {
-          "type": "string",
-          "enum": [
-            "cursor",
-            "always",
-            "hover",
-            "off"
-          ],
-          "default": "cursor",
-          "markdownDescription": "%shigan.trigger.markdownDescription%"
-        },
-        "shigan.show": {
-          "type": "array",
-          "items": {
+          "shigan.languages": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": [
+              "c",
+              "cpp",
+              "csharp",
+              "rust"
+            ],
+            "description": "%shigan.languages.description%"
+          },
+          "shigan.trigger": {
             "type": "string",
             "enum": [
+              "cursor",
+              "always",
+              "hover",
+              "off"
+            ],
+            "default": "cursor",
+            "markdownDescription": "%shigan.trigger.markdownDescription%"
+          },
+          "shigan.show": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "brackets",
+                "macros"
+              ]
+            },
+            "default": [
               "brackets",
               "macros"
-            ]
+            ],
+            "description": "%shigan.show.description%"
           },
-          "default": [
-            "brackets",
-            "macros"
-          ],
-          "description": "%shigan.show.description%"
-        },
-        "shigan.compileFlags": {
-          "type": "array",
-          "items": {
+          "shigan.showRange": {
+            "type": "boolean",
+            "default": true,
+            "description": "%shigan.showRange.description%"
+          },
+          "shigan.showRangeThreshold": {
+            "type": "number",
+            "default": 0,
+            "minimum": 0,
+            "description": "%shigan.showRangeThreshold.description%"
+          },
+          "shigan.showLabel": {
+            "type": "boolean",
+            "default": true,
+            "description": "%shigan.showLabel.description%"
+          },
+          "shigan.inactive.skipBrackets": {
+            "type": "boolean",
+            "default": true,
+            "description": "%shigan.inactive.skipBrackets.description%"
+          },
+          "shigan.inactive.skipDirectives": {
+            "type": "boolean",
+            "default": false,
+            "description": "%shigan.inactive.skipDirectives.description%"
+          },
+          "shigan.inactive.markInactive": {
+            "type": "boolean",
+            "default": true,
+            "description": "%shigan.inactive.markInactive.description%"
+          }
+        }
+      },
+      {
+        "id": "shigan.c",
+        "title": "%shigan.configuration.c%",
+        "order": 1,
+        "properties": {
+          "shigan.c.trackFileDefines": {
+            "type": "boolean",
+            "default": true,
+            "description": "%shigan.c.trackFileDefines.description%"
+          },
+          "shigan.c.compileFlags": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "description": "%shigan.c.compileFlags.itemDescription%"
+            },
+            "default": [],
+            "markdownDescription": "%shigan.c.compileFlags.markdownDescription%"
+          },
+          "shigan.c.inheritCompileCommands": {
+            "type": "boolean",
+            "default": false,
+            "description": "%shigan.c.inheritCompileCommands.description%"
+          }
+        }
+      },
+      {
+        "id": "shigan.cpp",
+        "title": "%shigan.configuration.cpp%",
+        "order": 2,
+        "properties": {
+          "shigan.cpp.trackFileDefines": {
+            "type": "boolean",
+            "default": true,
+            "description": "%shigan.cpp.trackFileDefines.description%"
+          },
+          "shigan.cpp.compileFlags": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "description": "%shigan.cpp.compileFlags.itemDescription%"
+            },
+            "default": [],
+            "markdownDescription": "%shigan.cpp.compileFlags.markdownDescription%"
+          },
+          "shigan.cpp.inheritCompileCommands": {
+            "type": "boolean",
+            "default": false,
+            "description": "%shigan.cpp.inheritCompileCommands.description%"
+          }
+        }
+      },
+      {
+        "id": "shigan.csharp",
+        "title": "%shigan.configuration.csharp%",
+        "order": 3,
+        "properties": {
+          "shigan.csharp.trackFileDefines": {
+            "type": "boolean",
+            "default": true,
+            "description": "%shigan.csharp.trackFileDefines.description%"
+          },
+          "shigan.csharp.compileFlags": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "description": "%shigan.csharp.compileFlags.itemDescription%"
+            },
+            "default": [],
+            "markdownDescription": "%shigan.csharp.compileFlags.markdownDescription%"
+          },
+          "shigan.csharp.define": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": [],
+            "description": "%shigan.csharp.define.description%"
+          },
+          "shigan.csharp.inheritProject": {
+            "type": "boolean",
+            "default": true,
+            "description": "%shigan.csharp.inheritProject.description%"
+          },
+          "shigan.csharp.configuration": {
             "type": "string",
-            "description": "%shigan.compileFlags.itemDescription%"
+            "default": "Debug",
+            "description": "%shigan.csharp.configuration.description%"
           },
-          "default": [],
-          "markdownDescription": "%shigan.compileFlags.markdownDescription%"
-        },
-        "shigan.inheritCompileCommands": {
-          "type": "boolean",
-          "default": false,
-          "description": "%shigan.inheritCompileCommands.description%"
-        },
-        "shigan.csharp.define": {
-          "type": "array",
-          "items": {
-            "type": "string"
+          "shigan.csharp.targetFramework": {
+            "type": "string",
+            "default": "",
+            "description": "%shigan.csharp.targetFramework.description%"
+          }
+        }
+      },
+      {
+        "id": "shigan.rust",
+        "title": "%shigan.configuration.rust%",
+        "order": 4,
+        "properties": {
+          "shigan.rust.cfg": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": [],
+            "description": "%shigan.rust.cfg.description%"
           },
-          "default": [],
-          "description": "%shigan.csharp.define.description%"
-        },
-        "shigan.csharp.inheritProject": {
-          "type": "boolean",
-          "default": true,
-          "description": "%shigan.csharp.inheritProject.description%"
-        },
-        "shigan.csharp.configuration": {
-          "type": "string",
-          "default": "Debug",
-          "description": "%shigan.csharp.configuration.description%"
-        },
-        "shigan.csharp.targetFramework": {
-          "type": "string",
-          "default": "",
-          "description": "%shigan.csharp.targetFramework.description%"
-        },
-        "shigan.rust.cfg": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "default": [],
-          "description": "%shigan.rust.cfg.description%"
-        },
-        "shigan.rust.inheritCargo": {
-          "type": "boolean",
-          "default": true,
-          "description": "%shigan.rust.inheritCargo.description%"
-        },
-        "shigan.preprocessor.trackFileDefines": {
-          "type": "boolean",
-          "default": true,
-          "description": "%shigan.preprocessor.trackFileDefines.description%"
-        },
-        "shigan.preprocessor.skipInactiveBrackets": {
-          "type": "boolean",
-          "default": true,
-          "description": "%shigan.preprocessor.skipInactiveBrackets.description%"
-        },
-        "shigan.preprocessor.skipInactiveDirectives": {
-          "type": "boolean",
-          "default": false,
-          "description": "%shigan.preprocessor.skipInactiveDirectives.description%"
-        },
-        "shigan.preprocessor.markInactive": {
-          "type": "boolean",
-          "default": true,
-          "description": "%shigan.preprocessor.markInactive.description%"
-        },
-        "shigan.showRange": {
-          "type": "boolean",
-          "default": true,
-          "description": "%shigan.showRange.description%"
-        },
-        "shigan.showRangeThreshold": {
-          "type": "number",
-          "default": 0,
-          "minimum": 0,
-          "description": "%shigan.showRangeThreshold.description%"
-        },
-        "shigan.showLabel": {
-          "type": "boolean",
-          "default": true,
-          "description": "%shigan.showLabel.description%"
+          "shigan.rust.inheritCargo": {
+            "type": "boolean",
+            "default": true,
+            "description": "%shigan.rust.inheritCargo.description%"
+          }
         }
       }
-    }
+    ]
   },
   "scripts": {
     "build": "node esbuild.js",
