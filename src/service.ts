@@ -269,8 +269,9 @@ function cFamilyDocumentHints(
   // Activity is only known to the evaluator; build the model here so the
   // renderer receives a self-contained `conditionals` value. Every C-family
   // model hint is macro-kind, so it is only ever rendered under the `macros`
-  // gate — a config without `macros` needs neither the evaluated activity nor
-  // the O(blocks) pairing (computeHints then only renders bracket hints).
+  // gate — a config without `macros` skips this evaluated activity and the
+  // O(blocks) pairing (with `conditional` on, `computeHints` still builds a
+  // structural model but filters every C-family entry out).
   const conditionals = display.macros
     ? cConditionals(scanned.directives, {
         branchActive: (line) => evaluation.branchActive.get(line),

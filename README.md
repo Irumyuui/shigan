@@ -163,6 +163,8 @@ Basic settings:
 - `#region`/`#endregion` are paired under the same `shigan.show` `macros`
   switch as `#if`/`#else`/`#endif` (there is no separate toggle) and are never
   flagged `(inactive)`, even inside an `#if 0`.
+- A `shigan.show` value that matches none of the known kinds (e.g. a typo like
+  `["macro"]`) silently hides the corresponding hints instead of erroring.
 - The label on a lone `{` only walks past a wrapped base list / `where` clause
   when it ends on a type declaration (`class`/`struct`/`interface`/`enum`/
   `namespace`/`record`/`union`); other wrapped statements keep the plain

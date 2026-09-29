@@ -74,6 +74,25 @@ suite('Shigan integration', () => {
     }
   });
 
+  test('hides a preprocessor hover when the macros gate is off', async () => {
+    await setShow(['brackets']);
+    await setTrigger('hover');
+    try {
+      const doc = await vscode.workspace.openTextDocument({ language: 'c', content: CHAIN });
+      await vscode.window.showTextDocument(doc);
+      const hovers = await vscode.commands.executeCommand<vscode.Hover[]>(
+        'vscode.executeHoverProvider',
+        doc.uri,
+        new vscode.Position(2, 1)
+      );
+      const markdown = hovers ? textOf(hovers) : '';
+      assert.doesNotMatch(markdown, /:1-3/, 'a hidden macro hint must not produce a hover');
+    } finally {
+      await setShow(['brackets', 'macros', 'conditional']);
+      await setTrigger('cursor');
+    }
+  });
+
   test('computes clickable hints in always mode', async () => {
     await setTrigger('always');
     try {
@@ -291,6 +310,28 @@ suite('Shigan integration', () => {
       assert.match(markdown, /\*\(inactive\)\*/);
     } finally {
       await setRustCfg([]);
+      await setTrigger('cursor');
+    }
+  });
+
+  test('hides a Rust conditional hover when the conditional gate is off', async () => {
+    await setShow(['brackets', 'macros']);
+    await setTrigger('hover');
+    try {
+      const doc = await vscode.workspace.openTextDocument({
+        language: 'rust',
+        content: '#[cfg(unix)]\nfn unix_only() {\n}\n',
+      });
+      await vscode.window.showTextDocument(doc);
+      const hovers = await vscode.commands.executeCommand<vscode.Hover[]>(
+        'vscode.executeHoverProvider',
+        doc.uri,
+        new vscode.Position(0, 2)
+      );
+      const markdown = hovers ? textOf(hovers) : '';
+      assert.doesNotMatch(markdown, /\*conditional\*/, 'a hidden cfg hint must not produce a hover');
+    } finally {
+      await setShow(['brackets', 'macros', 'conditional']);
       await setTrigger('cursor');
     }
   });

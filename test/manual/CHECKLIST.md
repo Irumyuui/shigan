@@ -98,5 +98,6 @@ host-mismatched items, and no hint inside raw strings, lifetimes or attributes.
 - [ ] The `r#" ... { ( } ] ... "#` raw string produces no bracket hints
 - [ ] The `<'a>` / `&'a str` lifetime produces no char-literal or bracket hint
 - [ ] `borrow() { ... }` and `main() { ... }` are hinted as usual
-- [ ] The `#[cfg]` hints ride the `macros` switch: `shigan.show =
-      ["brackets"]` hides them
+- [ ] The `#[cfg]` hints ride the `conditional` value: `shigan.show =
+      ["brackets"]` and `["brackets", "macros"]` hide them, while
+      `["brackets", "conditional"]` keeps them and hides C `#if` hints
