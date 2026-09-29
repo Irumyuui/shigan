@@ -8,8 +8,8 @@
  *   node scripts/package.mjs --install       # also install into the local VS Code
  *   node scripts/package.mjs --no-sourcemap  # dev build without a sourcemap
  *
- * `.vscodeignore` excludes `**/*.map`, so the sourcemap a dev build emits does
- * not ship inside the VSIX either way.
+ * `.vscodeignore` excludes sourcemap files (`*.map`), so the sourcemap a dev build
+ * emits does not ship inside the VSIX either way.
  */
 import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdirSync, readFileSync } from 'node:fs';
