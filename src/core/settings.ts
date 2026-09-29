@@ -135,7 +135,6 @@ export function languageSettingsFor(config: ShiganConfig, kind: LanguageKind): L
       };
     case 'c':
     case 'rust':
-    default:
       return config.c;
   }
 }

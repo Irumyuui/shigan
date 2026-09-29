@@ -83,26 +83,24 @@ function spanValue(span: CfgItemSpan, environment: RustCfgEnvironment): boolean 
 }
 
 /**
+ * A span whose predicate is fully decided by `environment.explicit` alone.
+ * Mirrors the relevant {@link CfgItemSpan} fields (notably `attrLines`, used to
+ * anchor each segment's target) plus the decision itself.
+ */
+export type ExplicitDecidedSpan = Pick<
+  CfgItemSpan,
+  'attrLine' | 'attrLines' | 'headLines' | 'endLine'
+> & { inactive: boolean };
+
+/**
  * Spans whose predicate is fully decided by `environment.explicit` alone
  * (Kleene result `true` or `false`, never `undefined`). These are the spans a
  * user's `shigan.rust.cfg` entries determine, so rust-analyzer's diagnostics
  * must not override them.
  */
-export function explicitDecidedSpans(input: RustConditionalInput): Array<{
-  attrLine: number;
-  attrLines: readonly number[];
-  headLines: readonly number[];
-  endLine: number;
-  inactive: boolean;
-}> {
+export function explicitDecidedSpans(input: RustConditionalInput): ExplicitDecidedSpan[] {
   const explicitEnvironment: RustCfgEnvironment = { explicit: input.environment.explicit };
-  const decided: Array<{
-    attrLine: number;
-    attrLines: readonly number[];
-    headLines: readonly number[];
-    endLine: number;
-    inactive: boolean;
-  }> = [];
+  const decided: ExplicitDecidedSpan[] = [];
 
   for (const span of input.spans ?? pairCfgItems(input.scanned, input.lines)) {
     const value = spanValue(span, explicitEnvironment);

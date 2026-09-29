@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { clearCargoCache, findCargoFeatures, hasAncestorManifest } from '../../src/cargo-source';
 import { cleanupTempDirs, makeTempDir, write } from './helpers';
@@ -94,6 +95,16 @@ describe('findCargoFeatures', () => {
     expect(findCargoFeatures(file)).toBeUndefined();
     expect(findCargoFeatures(file)).toBeUndefined();
   });
+
+  it('ignores a directory named Cargo.toml', () => {
+    const root = makeTempDir('shigan-cargo-');
+    const file = path.join(root, 'src', 'main.rs');
+    write(file, '');
+    // A directory with the manifest's name is not a manifest.
+    fs.mkdirSync(path.join(root, 'Cargo.toml'));
+
+    expect(findCargoFeatures(file)).toBeUndefined();
+  });
 });
 
 describe('hasAncestorManifest', () => {
@@ -111,6 +122,33 @@ describe('hasAncestorManifest', () => {
     const root = makeTempDir('shigan-cargo-');
     write(path.join(root, 'Cargo.toml'), manifest('only_feature'));
     const file = path.join(root, 'src', 'main.rs');
+    write(file, '');
+
+    expect(hasAncestorManifest(file)).toBe(false);
+  });
+
+  it('caches the answer per directory until clearCargoCache', () => {
+    const root = makeTempDir('shigan-cargo-');
+    const file = path.join(root, 'member', 'src', 'main.rs');
+    write(file, '');
+    expect(hasAncestorManifest(file)).toBe(false);
+
+    // A parent workspace manifest appearing later is not seen while the
+    // negative answer is cached.
+    write(path.join(root, 'Cargo.toml'), ['[workspace]', 'members = ["member"]'].join('\n'));
+    write(path.join(root, 'member', 'Cargo.toml'), manifest('member_feature'));
+    expect(hasAncestorManifest(file)).toBe(false);
+
+    clearCargoCache();
+    expect(hasAncestorManifest(file)).toBe(true);
+  });
+
+  it('ignores a directory named Cargo.toml in an ancestor', () => {
+    const root = makeTempDir('shigan-cargo-');
+    write(path.join(root, 'member', 'Cargo.toml'), manifest('member_feature'));
+    // An ancestor directory with the manifest's name is not a parent manifest.
+    fs.mkdirSync(path.join(root, 'Cargo.toml'));
+    const file = path.join(root, 'member', 'src', 'main.rs');
     write(file, '');
 
     expect(hasAncestorManifest(file)).toBe(false);

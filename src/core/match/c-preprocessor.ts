@@ -326,10 +326,9 @@ export function cConditionals(
             target: { line: previous.line, col: 0 },
           },
         ],
-        inactive: options.branchActive
-          ? options.branchActive(previous.line) === false &&
-            options.branchActive(current.line) === false
-          : false,
+        inactive:
+          options.branchActive?.(previous.line) === false &&
+          options.branchActive?.(current.line) === false,
         kind: 'macro',
       });
     }
@@ -359,7 +358,7 @@ export function cConditionals(
         cursorFrom: block.endif.line,
         cursorTo: opener.line,
         segments,
-        inactive: options.blockActive ? options.blockActive(opener.line) === false : false,
+        inactive: options.blockActive?.(opener.line) === false,
         kind: 'macro',
       });
     }

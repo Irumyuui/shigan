@@ -1,6 +1,6 @@
-import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { parseCargoFeatures, type CargoFeatures } from './core/cargo';
+import { isFile, walkUpCached } from './fs-walk';
 
 /**
  * Node-only filesystem layer around {@link parseCargoFeatures}. It locates the
@@ -14,6 +14,12 @@ const MANIFEST = 'Cargo.toml';
 const cache = new Map<string, CargoFeatures | undefined>();
 
 /**
+ * Cache for {@link hasAncestorManifest}, keyed by the file's starting
+ * directory; the boolean answer (negative included) is cached per directory.
+ */
+const ancestorCache = new Map<string, boolean>();
+
+/**
  * Walks up from `filePath` to the filesystem root looking for the nearest
  * `Cargo.toml` and returns its parsed features. Files are read defensively:
  * unreadable or malformed manifests yield `undefined` instead of throwing.
@@ -21,42 +27,13 @@ const cache = new Map<string, CargoFeatures | undefined>();
  * are cached per starting directory; see {@link clearCargoCache}.
  */
 export function findCargoFeatures(filePath: string): CargoFeatures | undefined {
-  const resolved = path.resolve(filePath);
-  let dir = path.dirname(resolved);
-  const visited: string[] = [];
-
-  for (;;) {
-    if (cache.has(dir)) {
-      const cached = cache.get(dir);
-      for (const seen of visited) cache.set(seen, cached);
-      return cached;
-    }
-
-    visited.push(dir);
-    const candidate = path.join(dir, MANIFEST);
-    if (isFile(candidate)) {
-      let features: CargoFeatures | undefined;
-      try {
-        features = parseCargoFeatures(fs.readFileSync(candidate, 'utf8'));
-      } catch {
-        features = undefined;
-      }
-      for (const seen of visited) cache.set(seen, features);
-      return features;
-    }
-
-    const parent = path.dirname(dir);
-    if (parent === dir) break;
-    dir = parent;
-  }
-
-  for (const seen of visited) cache.set(seen, undefined);
-  return undefined;
+  return walkUpCached(filePath, MANIFEST, cache, parseCargoFeatures);
 }
 
-/** Clears the cache (call when the workspace changes on disk). */
+/** Clears the caches (call when the workspace changes on disk). */
 export function clearCargoCache(): void {
   cache.clear();
+  ancestorCache.clear();
 }
 
 /**
@@ -64,9 +41,24 @@ export function clearCargoCache(): void {
  * `Cargo.toml` in an ancestor directory — a conservative signal that the crate
  * may be a workspace member (or otherwise have a parent manifest), so a feature
  * declared only in the child cannot be treated as definitely absent.
+ *
+ * The answer depends only on `filePath`'s directory, so it is cached there
+ * (negative answers included) until {@link clearCargoCache}.
  */
 export function hasAncestorManifest(filePath: string): boolean {
-  const nearest = nearestManifestDir(path.resolve(filePath));
+  const resolved = path.resolve(filePath);
+  const startDir = path.dirname(resolved);
+  const cached = ancestorCache.get(startDir);
+  if (cached !== undefined) return cached;
+
+  const result = computeHasAncestorManifest(resolved);
+  ancestorCache.set(startDir, result);
+  return result;
+}
+
+/** Uncached {@link hasAncestorManifest} body. */
+function computeHasAncestorManifest(resolvedFile: string): boolean {
+  const nearest = nearestManifestDir(resolvedFile);
   if (nearest === undefined) return false;
 
   let dir = path.dirname(nearest);
@@ -86,13 +78,5 @@ function nearestManifestDir(resolvedFile: string): string | undefined {
     const parent = path.dirname(dir);
     if (parent === dir) return undefined;
     dir = parent;
-  }
-}
-
-function isFile(filePath: string): boolean {
-  try {
-    return fs.statSync(filePath).isFile();
-  } catch {
-    return false;
   }
 }

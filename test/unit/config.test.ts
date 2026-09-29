@@ -217,6 +217,23 @@ describe('contributed settings', () => {
     expect(keys.sort()).toEqual(Object.keys(FIELD_FOR_SETTING).sort());
   });
 
+  it('requests exactly the contributed setting keys through the reader', () => {
+    // The reader→manifest direction: every key readConfigFrom asks for must be
+    // contributed, and every contributed key must be asked for.
+    const requested = new Set<string>();
+    readConfigFrom(<T>(key: string, fallback: T): T => {
+      requested.add(key);
+      return fallback;
+    });
+
+    const contributed = categories
+      .flatMap((category) => Object.keys(category.properties))
+      .map((key) => key.replace(/^shigan\./, ''))
+      .sort();
+
+    expect([...requested].sort()).toEqual(contributed);
+  });
+
   it('never makes one setting id a complete dotted prefix of another', () => {
     const ids = Object.keys(FIELD_FOR_SETTING);
     for (const a of ids) {

@@ -3,6 +3,10 @@ import { MacroDef } from './types';
 
 export interface ParsedFlags {
   macros: Map<string, MacroDef>;
+  /**
+   * Include (`-I`) paths, kept for transparency (mirroring {@link unknown})
+   * even though the lexical tier does not consume them.
+   */
   includePaths: string[];
   standard?: string;
   /** Flags that Shigan does not interpret (kept for transparency / future use). */
@@ -66,14 +70,14 @@ export function parseCompileFlags(
   for (let i = 0; i < flags.length; i++) {
     const raw = substitute(flags[i]);
 
-    if (raw === '-D' || raw.startsWith('-D')) {
+    if (raw.startsWith('-D')) {
       const define = raw === '-D' ? substitute(flags[++i] ?? '') : raw.slice(2);
       const parsed = parseFlagDefine(define);
       if (parsed) macros.set(parsed.name, { value: parsed.value, functionLike: parsed.functionLike });
       continue;
     }
 
-    if (raw === '-U' || raw.startsWith('-U')) {
+    if (raw.startsWith('-U')) {
       const name = (raw === '-U' ? flags[++i] ?? '' : raw.slice(2)).trim();
       if (name) macros.delete(name);
       continue;

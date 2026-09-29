@@ -101,10 +101,19 @@ export function pairCfgItems(scanned: ScanResult, lines: readonly string[]): Cfg
 
   const consumed = new Set<string>();
   const spans: CfgItemSpan[] = [];
+  const ctx: PairingContext = {
+    cfgByPos,
+    consumed,
+    brackets,
+    index,
+    byOpenOffset: pairs.byOpenOffset,
+    lines,
+    codeOnly,
+  };
 
   for (const attr of cfgs) {
     if (consumed.has(attrKey(attr))) continue;
-    const span = pairOne(attr, cfgByPos, consumed, brackets, index, pairs.byOpenOffset, lines, codeOnly);
+    const span = pairOne(attr, ctx);
     if (span) spans.push(span);
   }
 
@@ -112,16 +121,19 @@ export function pairCfgItems(scanned: ScanResult, lines: readonly string[]): Cfg
   return spans;
 }
 
-function pairOne(
-  first: CfgAttributeToken,
-  cfgByPos: Map<string, CfgAttributeToken>,
-  consumed: Set<string>,
-  brackets: readonly BracketToken[],
-  index: BracketIndex,
-  byOpenOffset: Map<number, { open: BracketToken; close: BracketToken }>,
-  lines: readonly string[],
-  codeOnly: readonly string[]
-): CfgItemSpan | undefined {
+/** The loop-invariant values shared by every {@link pairOne} call. */
+interface PairingContext {
+  readonly cfgByPos: Map<string, CfgAttributeToken>;
+  readonly consumed: Set<string>;
+  readonly brackets: readonly BracketToken[];
+  readonly index: BracketIndex;
+  readonly byOpenOffset: Map<number, { open: BracketToken; close: BracketToken }>;
+  readonly lines: readonly string[];
+  readonly codeOnly: readonly string[];
+}
+
+function pairOne(first: CfgAttributeToken, ctx: PairingContext): CfgItemSpan | undefined {
+  const { cfgByPos, consumed, brackets, index, byOpenOffset, lines, codeOnly } = ctx;
   const limit = Math.min(first.line + MAX_LOOKAHEAD, lines.length - 1);
   const merged: CfgAttributeToken[] = [];
   let line = first.line;
@@ -538,7 +550,17 @@ function maskComments(lines: readonly string[]): string[] {
   let string = false; // an open normal `"…"` string (spans lines like the lexer's)
 
   for (const text of lines) {
-    const chars = text.split('');
+    const parts: string[] = [];
+    let copied = 0; // index up to which `text` has been copied verbatim
+    // Blank `[from, to)`, copying any code before it. `from` is always the
+    // current scan index, so calls are monotonic and the output is the input
+    // with exactly those runs replaced by spaces (same length every line).
+    const blank = (from: number, to: number): void => {
+      if (from > copied) parts.push(text.slice(copied, from));
+      if (to > from) parts.push(' '.repeat(to - from));
+      copied = to;
+    };
+
     let i = 0;
     while (i < text.length) {
       if (string) {
@@ -546,36 +568,34 @@ function maskComments(lines: readonly string[]): string[] {
         if (ch === '\\') {
           // A backslash escapes the next char, including a newline, so the
           // string continues onto the next line (mirrors the lexer's skipString).
-          chars[i] = ' ';
           if (i + 1 < text.length) {
-            chars[i + 1] = ' ';
+            blank(i, i + 2);
             i += 2;
           } else {
+            blank(i, i + 1);
             i++;
           }
           continue;
         }
-        chars[i] = ' ';
+        blank(i, i + 1);
         i++;
         if (ch === '"') string = false;
         continue;
       }
       if (block > 0) {
         if (text[i] === '/' && text[i + 1] === '*') {
-          chars[i] = ' ';
-          chars[i + 1] = ' ';
+          blank(i, i + 2);
           block++;
           i += 2;
           continue;
         }
         if (text[i] === '*' && text[i + 1] === '/') {
-          chars[i] = ' ';
-          chars[i + 1] = ' ';
+          blank(i, i + 2);
           block--;
           i += 2;
           continue;
         }
-        chars[i] = ' ';
+        blank(i, i + 1);
         i++;
         continue;
       }
@@ -585,7 +605,7 @@ function maskComments(lines: readonly string[]): string[] {
           if (text[i + 1 + h] !== '#') closes = false;
         }
         const end = i + 1 + raw;
-        for (let k = i; k < (closes ? end : i + 1); k++) chars[k] = ' ';
+        blank(i, closes ? end : i + 1);
         if (closes) raw = -1;
         i = closes ? end : i + 1;
         continue;
@@ -593,12 +613,11 @@ function maskComments(lines: readonly string[]): string[] {
 
       const ch = text[i];
       if (ch === '/' && text[i + 1] === '/') {
-        for (let k = i; k < text.length; k++) chars[k] = ' ';
+        blank(i, text.length);
         break;
       }
       if (ch === '/' && text[i + 1] === '*') {
-        chars[i] = ' ';
-        chars[i + 1] = ' ';
+        blank(i, i + 2);
         block = 1;
         i += 2;
         continue;
@@ -609,18 +628,18 @@ function maskComments(lines: readonly string[]): string[] {
         const { hashes, bodyStart } = rawStart;
         const close = findRawClose(text, bodyStart, hashes);
         if (close < 0) {
-          for (let k = i; k < text.length; k++) chars[k] = ' ';
+          blank(i, text.length);
           raw = hashes;
           i = text.length;
         } else {
-          for (let k = i; k < close; k++) chars[k] = ' ';
+          blank(i, close);
           i = close;
         }
         continue;
       }
 
       if (ch === '"') {
-        chars[i] = ' ';
+        blank(i, i + 1);
         string = true; // opening quote; masked until the closing one (cross-line)
         i++;
         continue;
@@ -631,7 +650,8 @@ function maskComments(lines: readonly string[]): string[] {
       }
       i++;
     }
-    masked.push(chars.join(''));
+    if (copied < text.length) parts.push(text.slice(copied));
+    masked.push(parts.join(''));
   }
 
   return masked;
@@ -650,14 +670,23 @@ function maskAttributeSpans(masked: readonly string[]): string[] {
   let depth = 0; // bracket depth inside an attribute
 
   for (const text of masked) {
-    const chars = text.split('');
+    const parts: string[] = [];
+    let copied = 0;
+    // Same run builder as {@link maskComments}: replace each masked range with
+    // spaces while copying the untouched code verbatim.
+    const blank = (from: number, to: number): void => {
+      if (from > copied) parts.push(text.slice(copied, from));
+      if (to > from) parts.push(' '.repeat(to - from));
+      copied = to;
+    };
+
     let i = 0;
     while (i < text.length) {
       if (depth > 0) {
         const ch = text[i];
         if (ch === '[') depth++;
         else if (ch === ']') depth--;
-        chars[i] = ' ';
+        blank(i, i + 1);
         i++;
         continue;
       }
@@ -665,7 +694,7 @@ function maskAttributeSpans(masked: readonly string[]): string[] {
         const bang = text[i + 1] === '!';
         const bracket = bang ? i + 2 : i + 1;
         if (text[bracket] === '[') {
-          for (let k = i; k <= bracket; k++) chars[k] = ' ';
+          blank(i, bracket + 1);
           depth = 1;
           i = bracket + 1;
           continue;
@@ -673,7 +702,8 @@ function maskAttributeSpans(masked: readonly string[]): string[] {
       }
       i++;
     }
-    out.push(chars.join(''));
+    if (copied < text.length) parts.push(text.slice(copied));
+    out.push(parts.join(''));
   }
 
   return out;

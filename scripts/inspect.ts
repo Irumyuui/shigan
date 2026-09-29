@@ -6,6 +6,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { extname, join } from 'node:path';
 import { findCargoFeatures, hasAncestorManifest } from '../src/cargo-source';
+import { ConditionalModel } from '../src/core/conditionals';
 import { computeHints } from '../src/core/hints';
 import { syntaxFor } from '../src/core/language';
 import { scanRust } from '../src/core/lexer/rust';
@@ -13,7 +14,7 @@ import { scan } from '../src/core/lexer/tokenizer';
 import { cConditionals, evaluateConditionals } from '../src/core/match/c-preprocessor';
 import { environmentFromSeed, featureFacts, RustCfgEnvironment } from '../src/core/match/rust/cfg';
 import { rustConditionals } from '../src/core/match/rust/conditionals';
-import { Hint, MacroDef } from '../src/core/types';
+import { Hint, MacroDef, ScanResult } from '../src/core/types';
 
 const file = process.argv[2] ?? join(process.cwd(), 'test', 'manual', 'sample.c');
 const trigger = (process.argv[3] as 'always' | 'cursor') ?? 'always';
@@ -21,26 +22,17 @@ const text = readFileSync(file, 'utf8');
 const lines = text.split(/\r?\n/);
 const language = languageFor(file);
 
-if (language === 'rust') {
-  const scanned = scanRust(text);
-  const model = rustConditionals({ scanned, lines, environment: rustEnvironment(file) });
+// Each language branch prepares the same three inputs; the print loop below is
+// shared so both pipelines render all three kinds identically.
+let scanned: ScanResult;
+let conditionals: ConditionalModel;
+let inactive: (line: number) => boolean;
 
-  for (const kind of ['brackets', 'macros', 'conditional'] as const) {
-    print(
-      kind,
-      computeHints(text, {
-        brackets: kind === 'brackets',
-        macros: kind === 'macros',
-        conditional: kind === 'conditional',
-        trigger,
-        showRange: true,
-        showLabel: true,
-        inactive: (line) => model.inactiveLines?.has(line) === true,
-        scanned,
-        conditionals: model,
-      })
-    );
-  }
+if (language === 'rust') {
+  scanned = scanRust(text);
+  const model = rustConditionals({ scanned, lines, environment: rustEnvironment(file) });
+  conditionals = model;
+  inactive = (line) => model.inactiveLines?.has(line) === true;
 } else {
   const syntax = syntaxFor(language);
 
@@ -54,33 +46,34 @@ if (language === 'rust') {
     seedMacros.set(name, { value, functionLike: false });
   }
 
-  const scanned = scan(text, syntax);
+  scanned = scan(text, syntax);
   const { inactiveLines, branchActive, blockActive } = evaluateConditionals(scanned.directives, {
     macros: seedMacros,
     trackFileDefines: true,
     syntax,
   });
-  const conditionals = cConditionals(scanned.directives, {
+  conditionals = cConditionals(scanned.directives, {
     branchActive: (line) => branchActive.get(line),
     blockActive: (line) => blockActive.get(line),
   });
+  inactive = (line) => inactiveLines.has(line);
+}
 
-  for (const kind of ['brackets', 'macros', 'conditional'] as const) {
-    print(
-      kind,
-      computeHints(text, {
-        brackets: kind === 'brackets',
-        macros: kind === 'macros',
-        conditional: kind === 'conditional',
-        trigger,
-        showRange: true,
-        showLabel: true,
-        inactive: (line) => inactiveLines.has(line),
-        scanned,
-        conditionals,
-      })
-    );
-  }
+for (const kind of ['brackets', 'macros', 'conditional'] as const) {
+  print(
+    kind,
+    computeHints(text, {
+      brackets: kind === 'brackets',
+      macros: kind === 'macros',
+      conditional: kind === 'conditional',
+      trigger,
+      showRange: true,
+      showLabel: true,
+      inactive,
+      scanned,
+      conditionals,
+    })
+  );
 }
 
 function print(kind: 'brackets' | 'macros' | 'conditional', hints: Hint[]): void {

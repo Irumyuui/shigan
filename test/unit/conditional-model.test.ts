@@ -161,6 +161,32 @@ describe('computeHints (macros / conditional gates)', () => {
     expect(kinds(renderRust(true, true))).toEqual(['conditional']);
   });
 
+  it('does not build a structural model when the macros gate is off', () => {
+    // C directives exist, but no `conditionals` is supplied. A structural model
+    // only ever holds macro-kind entries, so with `macros:false` the renderer
+    // skips building it; the output must match the old behaviour of building the
+    // model and filtering every entry out.
+    const skipped = computeHints(C_TEXT, {
+      brackets: false,
+      macros: false,
+      conditional: true,
+      trigger: 'always',
+    });
+    const builtAndFiltered = computeHints(C_TEXT, {
+      brackets: false,
+      macros: false,
+      conditional: true,
+      trigger: 'always',
+      conditionals: cConditionals(scan(C_TEXT).directives),
+    });
+    expect(skipped).toEqual([]);
+    expect(builtAndFiltered).toEqual([]);
+
+    // A caller-supplied model is used as-is, so the Rust `#[cfg]` entries still
+    // render with `macros` off.
+    expect(kinds(renderRust(false, true))).toEqual(['conditional']);
+  });
+
   it('keeps excluding an inactive item from bracket matching when its cfg hint is hidden', () => {
     const text = '#[cfg(unix)]\nfn unix_only() {\n    let a = 1;\n}\n';
     // `-unix` decides the whole item inactive.

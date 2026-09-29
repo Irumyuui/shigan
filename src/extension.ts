@@ -19,10 +19,38 @@ const VERSION_STATE_KEY = 'shigan.activatedVersion';
 const PROJECT_GLOBS = ['**/*.csproj', '**/Cargo.toml'];
 
 let config: ShiganConfig;
-let refreshTimer: ReturnType<typeof setTimeout> | undefined;
-let projectTimer: ReturnType<typeof setTimeout> | undefined;
+let refreshDebounced: Debounced | undefined;
+let projectDebounced: Debounced | undefined;
 let projectWatchers: vscode.FileSystemWatcher[] = [];
 let inlayHints: ShiganInlayHintsProvider | undefined;
+
+interface Debounced {
+  schedule(): void;
+  cancel(): void;
+}
+
+/**
+ * One debounced task. `schedule` resets the timer, so a burst of events runs
+ * the task once after the last one; `cancel` drops a pending run and is safe to
+ * call when nothing is scheduled. Each task owns its own timer, so a
+ * project-file change never swallows a caret refresh.
+ */
+function debounced(run: () => void, delay = REFRESH_DELAY_MS): Debounced {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  return {
+    schedule(): void {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        timer = undefined;
+        run();
+      }, delay);
+    },
+    cancel(): void {
+      if (timer) clearTimeout(timer);
+      timer = undefined;
+    },
+  };
+}
 
 export function activate(context: vscode.ExtensionContext): void {
   config = readConfig();
@@ -38,22 +66,13 @@ export function activate(context: vscode.ExtensionContext): void {
 
   const refresh = (): void => inlayHints?.refresh();
 
-  const scheduleRefresh = (): void => {
-    if (refreshTimer) clearTimeout(refreshTimer);
-    refreshTimer = setTimeout(() => {
-      refreshTimer = undefined;
-      refresh();
-    }, REFRESH_DELAY_MS);
-  };
-
-  const scheduleProjectRefresh = (): void => {
-    if (projectTimer) clearTimeout(projectTimer);
-    projectTimer = setTimeout(() => {
-      projectTimer = undefined;
-      invalidateProjectFiles();
-      refresh();
-    }, REFRESH_DELAY_MS);
-  };
+  const refreshTask = debounced(refresh);
+  const projectTask = debounced(() => {
+    invalidateProjectFiles();
+    refresh();
+  });
+  refreshDebounced = refreshTask;
+  projectDebounced = projectTask;
 
   const watchProjectFiles = (): void => {
     for (const folder of vscode.workspace.workspaceFolders ?? []) {
@@ -61,9 +80,9 @@ export function activate(context: vscode.ExtensionContext): void {
         const watcher = vscode.workspace.createFileSystemWatcher(
           new vscode.RelativePattern(folder, glob)
         );
-        watcher.onDidCreate(scheduleProjectRefresh);
-        watcher.onDidChange(scheduleProjectRefresh);
-        watcher.onDidDelete(scheduleProjectRefresh);
+        watcher.onDidCreate(projectTask.schedule);
+        watcher.onDidChange(projectTask.schedule);
+        watcher.onDidDelete(projectTask.schedule);
         projectWatchers.push(watcher);
       }
     }
@@ -71,12 +90,12 @@ export function activate(context: vscode.ExtensionContext): void {
 
   context.subscriptions.push(
     vscode.window.onDidChangeTextEditorSelection(() => {
-      if (config.trigger === 'cursor') scheduleRefresh();
+      if (config.trigger === 'cursor') refreshTask.schedule();
     }),
     vscode.workspace.onDidChangeTextDocument(() => {
-      if (config.trigger === 'cursor' || config.trigger === 'always') scheduleRefresh();
+      if (config.trigger === 'cursor' || config.trigger === 'always') refreshTask.schedule();
     }),
-    vscode.window.onDidChangeActiveTextEditor(() => scheduleRefresh()),
+    vscode.window.onDidChangeActiveTextEditor(() => refreshTask.schedule()),
     vscode.workspace.onDidCloseTextDocument((document) =>
       forgetDocument(document.uri.toString())
     ),
@@ -85,7 +104,7 @@ export function activate(context: vscode.ExtensionContext): void {
         // The API can fire with no URIs when diagnostics are cleared; bump
         // every known document and refresh.
         noteRustDiagnosticsChanged([]);
-        scheduleRefresh();
+        refreshTask.schedule();
         return;
       }
 
@@ -103,7 +122,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
       if (rustUris.length === 0) return;
       noteRustDiagnosticsChanged(rustUris);
-      scheduleRefresh();
+      refreshTask.schedule();
     }),
     vscode.workspace.onDidChangeConfiguration((event) => {
       if (!event.affectsConfiguration('shigan')) return;
@@ -119,10 +138,8 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
     new vscode.Disposable(disposeProjectWatchers),
     new vscode.Disposable(() => {
-      if (refreshTimer) clearTimeout(refreshTimer);
-      refreshTimer = undefined;
-      if (projectTimer) clearTimeout(projectTimer);
-      projectTimer = undefined;
+      refreshTask.cancel();
+      projectTask.cancel();
     })
   );
 
@@ -141,10 +158,10 @@ function disposeProjectWatchers(): void {
 }
 
 export function deactivate(): void {
-  if (refreshTimer) clearTimeout(refreshTimer);
-  refreshTimer = undefined;
-  if (projectTimer) clearTimeout(projectTimer);
-  projectTimer = undefined;
+  refreshDebounced?.cancel();
+  refreshDebounced = undefined;
+  projectDebounced?.cancel();
+  projectDebounced = undefined;
   disposeProjectWatchers();
 
   // Unregistering the provider drops its inlay hints immediately, so nothing

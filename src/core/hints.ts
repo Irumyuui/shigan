@@ -41,8 +41,22 @@ export interface HintOptions {
    * structural one from `scanned.directives` (no activity is known then);
    * callers that can evaluate activity build the model themselves, e.g.
    * `cConditionals(scanned.directives, { branchActive, blockActive })`.
+   *
+   * A model is only ever built when `macros` is on: every structural C-family
+   * entry is macro-kind, so with `macros: false` nothing could be shown anyway.
    */
   conditionals?: ConditionalModel;
+  /**
+   * Pre-computed bracket matching result. When omitted the renderer matches
+   * `scanned.brackets` itself; callers that already matched (and shared the
+   * result across requests) pass it here to avoid matching twice.
+   */
+  matches?: BracketMatchResult;
+  /**
+   * Pre-computed document lines, used only by the bracket-label path. When
+   * omitted the text is split; pass a cached split to avoid splitting again.
+   */
+  lines?: readonly string[];
 }
 
 /**
@@ -78,7 +92,6 @@ export function computeHints(text: string, options: HintOptions = {}): Hint[] {
   const textOptions: HintTextOptions = { showRange, showLabel, rangeHideThreshold };
 
   const scanned = options.scanned ?? scan(text);
-  const lines = splitLines(text);
 
   if (options.brackets !== false) {
     const excludeInactive =
@@ -86,12 +99,15 @@ export function computeHints(text: string, options: HintOptions = {}): Hint[] {
         ? (token: BracketToken) => inactive(token.line)
         : undefined;
 
-    const result = matchBrackets(scanned.brackets, excludeInactive);
+    const result = options.matches ?? matchBrackets(scanned.brackets, excludeInactive);
     const pairs =
       trigger === 'cursor'
         ? selectCursorPairs(result, options.cursorOffset ?? -1)
         : result.pairs.filter((pair) => pair.open.line !== pair.close.line);
 
+    // Lines are only needed for the bracket label, so a config without
+    // brackets never splits the document.
+    const lines = options.lines ?? splitLines(text);
     for (const pair of pairs) {
       const hint = bracketHint(lines, pair, textOptions);
       // `always` means always: inactive pairs are only excluded from matching
@@ -103,14 +119,19 @@ export function computeHints(text: string, options: HintOptions = {}): Hint[] {
   }
 
   if (options.macros !== false || options.conditional !== false) {
-    const model = options.conditionals ?? cConditionals(scanned.directives);
+    // The structural model only ever emits macro-kind entries, so with the
+    // `macros` gate off it cannot contribute a hint — skip building it. A
+    // caller-supplied model (Rust) is always used as-is.
+    const model =
+      options.conditionals ??
+      (options.macros !== false ? cConditionals(scanned.directives) : undefined);
     const cursorLine =
       trigger === 'cursor' ? lineAtOffset(text, options.cursorOffset ?? -1) : -1;
 
-    for (const entry of model.hints) {
+    for (const entry of model?.hints ?? []) {
       // Each model hint is gated by its own kind: `macros` covers the C-family
       // directive and `#region` hints, `conditional` the Rust `#[cfg]` hints.
-      // The model itself is always built when either gate is on, so hiding one
+      // A caller-supplied model is used regardless of the gates, so hiding one
       // kind never changes the other's activity.
       const shown =
         entry.kind === 'conditional' ? options.conditional !== false : options.macros !== false;
@@ -145,7 +166,7 @@ export function computeHints(text: string, options: HintOptions = {}): Hint[] {
   return hints;
 }
 
-function bracketHint(lines: string[], pair: BracketPair, options: HintTextOptions): Hint {
+function bracketHint(lines: readonly string[], pair: BracketPair, options: HintTextOptions): Hint {
   const parts: string[] = [];
   if (shouldShowRange(options.showRange, options.rangeHideThreshold, pair.open.line, pair.close.line)) {
     parts.push(formatRange(pair.open.line, pair.close.line));
@@ -181,7 +202,7 @@ const MAX_CONTINUATION_STEPS = 16;
  * declaration (base list / `where` clause) and return the type declaration
  * when one is found; otherwise fall back to the previous line's trimmed text.
  */
-export function labelFor(lines: string[], open: BracketToken): string {
+export function labelFor(lines: readonly string[], open: BracketToken): string {
   const lineText = lines[open.line] ?? '';
   const before = lineText.slice(0, open.col).trim();
   if (before) return before;
@@ -197,7 +218,7 @@ export function labelFor(lines: string[], open: BracketToken): string {
  * non-continuation line's trimmed text (bounded by `MAX_CONTINUATION_STEPS`
  * and line 0).
  */
-function continuationStart(lines: string[], start: number): string {
+function continuationStart(lines: readonly string[], start: number): string {
   let index = start;
   let steps = 0;
 

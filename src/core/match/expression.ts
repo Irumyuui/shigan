@@ -304,10 +304,7 @@ function parseNumber(text: string, start: number): { value: number; index: numbe
     while (j < text.length && text[j] >= '0' && text[j] <= '9') j++;
     const digits = text.slice(start, j);
     value = digits.length > 1 && digits[0] === '0' ? parseInt(digits, 8) : parseInt(digits, 10);
-    if (Number.isNaN(value)) value = parseInt(digits, 10);
   }
-
-  if (Number.isNaN(value)) return undefined;
 
   // Skip integer suffixes.
   while (j < text.length && (text[j] === 'u' || text[j] === 'U' || text[j] === 'l' || text[j] === 'L')) j++;
