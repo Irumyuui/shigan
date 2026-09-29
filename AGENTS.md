@@ -132,7 +132,8 @@ git tag -d v0.0.1
   Settings are per language (`shigan.c.*` / `shigan.cpp.*` / `shigan.csharp.*` / `shigan.rust.*`), so a knob
   split across languages multiplies the manifest properties, the three nls files and the defaults in
   `src/core/settings.ts` — a missed one fails the drift/localization tests, which is intended.
-  `shigan.show` is deliberately frozen at two values (`brackets`/`macros`).
+  `shigan.show` takes three values (`brackets`/`macros`/`conditional`): `macros` gates the C-family
+  `#if`/`#region` hints, `conditional` the Rust `#[cfg]` hints.
 - **Language support is on by default**: `shigan.languages` defaults to `["c","cpp","csharp","rust"]` and `package.json`
   lists `onLanguage:` for each. Adding a language touches `src/core/language.ts` (the profile/kind), both of those
   places, `src/core/settings.ts` and `test/unit/config.test.ts`.
@@ -140,7 +141,8 @@ git tag -d v0.0.1
   item whose first depth-equal `{` (and its match) is within 300 lines, so semicolon-terminated items
   (`mod m;`, `use …;`, tuple structs, `type`/`static`/`const` without a brace body) and `#[cfg]` on macro bodies,
   match arms, struct fields or statements produce NO span — items nested in `mod`/`impl`/`trait` do. The hint carries
-  `kind: 'conditional'` but is still emitted under the `macros` `shigan.show` switch; there is no Rust-specific toggle.
+  `kind: 'conditional'` and is emitted under the `conditional` `shigan.show` value (C-family directive hints stay under
+  `macros`); the two gates are independent, and hiding either never changes the models the other's activity relies on.
 - **Rust activity is diagnostic-first, lexical-second.** `mergeRustInactiveLines` treats rust-analyzer's
   `inactive_code` diagnostics as authoritative when a matching diagnostic exists OR rust-analyzer is active
   (`src/rust-diagnostics.ts`); authoritative diagnostics *replace* the lexical negatives (they never union), and

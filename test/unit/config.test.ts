@@ -20,7 +20,7 @@ describe('readConfigFrom', () => {
       enable: true,
       languages: ['c', 'cpp', 'csharp', 'rust'],
       trigger: 'cursor',
-      show: ['brackets', 'macros'],
+      show: ['brackets', 'macros', 'conditional'],
       skipInactiveBrackets: true,
       skipInactiveDirectives: false,
       markInactive: true,
@@ -47,6 +47,7 @@ describe('readConfigFrom', () => {
     ['trigger', 'always', { trigger: 'always' }],
     ['trigger', 'off', { trigger: 'off' }],
     ['show', ['macros'], { show: ['macros'] }],
+    ['show', ['conditional'], { show: ['conditional'] }],
     ['show', [], { show: [] }],
     ['showRange', false, { showRange: false }],
     ['showRangeThreshold', 3, { rangeHideThreshold: 3 }],
@@ -237,12 +238,12 @@ describe('contributed settings', () => {
     }
   });
 
-  it('declares show as a two-value enum with the documented default', () => {
+  it('declares show as a three-value enum with the documented default', () => {
     const show = categories.find((category) => category.properties['shigan.show'])?.properties[
       'shigan.show'
     ] as { items?: { enum?: string[] }; default?: unknown };
-    expect(show.items?.enum).toEqual(['brackets', 'macros']);
-    expect(show.default).toEqual(['brackets', 'macros']);
+    expect(show.items?.enum).toEqual(['brackets', 'macros', 'conditional']);
+    expect(show.default).toEqual(['brackets', 'macros', 'conditional']);
   });
 
   it('wires every contributed setting through the reader, defaults and nls', () => {

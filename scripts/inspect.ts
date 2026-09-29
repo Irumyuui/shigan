@@ -25,12 +25,13 @@ if (language === 'rust') {
   const scanned = scanRust(text);
   const model = rustConditionals({ scanned, lines, environment: rustEnvironment(file) });
 
-  for (const kind of ['brackets', 'macros'] as const) {
+  for (const kind of ['brackets', 'macros', 'conditional'] as const) {
     print(
       kind,
       computeHints(text, {
         brackets: kind === 'brackets',
         macros: kind === 'macros',
+        conditional: kind === 'conditional',
         trigger,
         showRange: true,
         showLabel: true,
@@ -64,12 +65,13 @@ if (language === 'rust') {
     blockActive: (line) => blockActive.get(line),
   });
 
-  for (const kind of ['brackets', 'macros'] as const) {
+  for (const kind of ['brackets', 'macros', 'conditional'] as const) {
     print(
       kind,
       computeHints(text, {
         brackets: kind === 'brackets',
         macros: kind === 'macros',
+        conditional: kind === 'conditional',
         trigger,
         showRange: true,
         showLabel: true,
@@ -81,7 +83,7 @@ if (language === 'rust') {
   }
 }
 
-function print(kind: 'brackets' | 'macros', hints: Hint[]): void {
+function print(kind: 'brackets' | 'macros' | 'conditional', hints: Hint[]): void {
   console.log(`\n=== ${kind} (${trigger}) — ${hints.length} hint(s) ===`);
   for (const hint of hints) {
     const source = (lines[hint.line] ?? '').trimEnd();

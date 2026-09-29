@@ -83,7 +83,7 @@ export interface HintPart {
 
 export type Trigger = 'cursor' | 'always' | 'hover' | 'off';
 
-export type PairKind = 'brackets' | 'macros';
+export type PairKind = 'brackets' | 'macros' | 'conditional';
 
 export interface MacroDef {
   /** Replacement text; `'1'` for a flag-style `-DFOO`. */

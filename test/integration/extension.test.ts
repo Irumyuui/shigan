@@ -205,7 +205,7 @@ suite('Shigan integration', () => {
 
   test('re-renders inlay hints after a settings change without reopening', async () => {
     await setTrigger('always');
-    await setShow(['brackets', 'macros']);
+    await setShow(['brackets', 'macros', 'conditional']);
     try {
       const doc = await vscode.workspace.openTextDocument({ language: 'c', content: CHAIN });
       await vscode.window.showTextDocument(doc);
@@ -235,7 +235,7 @@ suite('Shigan integration', () => {
       );
 
       // ...and turning them back on restores it, still without reopening.
-      await setShow(['brackets', 'macros']);
+      await setShow(['brackets', 'macros', 'conditional']);
       const restored = await vscode.commands.executeCommand<vscode.InlayHint[]>(
         'vscode.executeInlayHintProvider',
         doc.uri,
@@ -246,7 +246,7 @@ suite('Shigan integration', () => {
         `expected the #endif hint back: ${JSON.stringify(restored.map((h) => h.position.line))}`
       );
     } finally {
-      await setShow(['brackets', 'macros']);
+      await setShow(['brackets', 'macros', 'conditional']);
       await setTrigger('cursor');
     }
   });
@@ -297,7 +297,7 @@ suite('Shigan integration', () => {
 
   test('fences the Rust inlay tooltip as rust, not c', async () => {
     await setTrigger('always');
-    await setShow(['brackets', 'macros']);
+    await setShow(['brackets', 'macros', 'conditional']);
     try {
       const doc = await vscode.workspace.openTextDocument({
         language: 'rust',
@@ -321,7 +321,7 @@ suite('Shigan integration', () => {
       assert.match(markdown, /```rust/);
       assert.doesNotMatch(markdown, /```c\n/);
     } finally {
-      await setShow(['brackets', 'macros']);
+      await setShow(['brackets', 'macros', 'conditional']);
       await setTrigger('cursor');
     }
   });

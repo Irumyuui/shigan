@@ -72,7 +72,7 @@ export function readConfigFrom(get: SettingReader): ShiganConfig {
     enable: get<boolean>('enable', true),
     languages: get<string[]>('languages', ['c', 'cpp', 'csharp', 'rust']),
     trigger: get<Trigger>('trigger', 'cursor'),
-    show: get<PairKind[]>('show', ['brackets', 'macros']),
+    show: get<PairKind[]>('show', ['brackets', 'macros', 'conditional']),
     skipInactiveBrackets: get<boolean>('inactive.skipBrackets', true),
     skipInactiveDirectives: get<boolean>('inactive.skipDirectives', false),
     markInactive: get<boolean>('inactive.markInactive', true),

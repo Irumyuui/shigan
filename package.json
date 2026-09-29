@@ -76,12 +76,14 @@
               "type": "string",
               "enum": [
                 "brackets",
-                "macros"
+                "macros",
+                "conditional"
               ]
             },
             "default": [
               "brackets",
-              "macros"
+              "macros",
+              "conditional"
             ],
             "description": "%shigan.show.description%"
           },

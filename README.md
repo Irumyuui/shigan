@@ -81,9 +81,9 @@ C++ and C#. Settings live in one category per language in the settings UI.
 | `shigan.enable` | `true` | Master switch |
 | `shigan.languages` | `["c","cpp","csharp","rust"]` | Active language ids |
 | `shigan.trigger` | `"cursor"` | `cursor` / `always` / `hover` / `off`, for every hint kind |
-| `shigan.show` | `["brackets","macros"]` | Which kinds to hint; `macros` gates `#if`/`#ifdef`/`#ifndef`/`#elif`/`#elifdef`/`#elifndef`/`#else`/`#endif`, `#region`/`#endregion` and the Rust `#[cfg]` hints. Stays exactly two values (no `conditional`) |
+| `shigan.show` | `["brackets","macros","conditional"]` | Which kinds to hint; `macros` gates the C-family `#if`/`#ifdef`/`#ifndef`/`#elif`/`#elifdef`/`#elifndef`/`#else`/`#endif` and `#region`/`#endregion` hints, `conditional` gates the Rust `#[cfg]` hints. The two are independent |
 | `shigan.inactive.skipBrackets` | `true` | Do not match brackets in inactive branches |
-| `shigan.inactive.skipDirectives` | `false` | Hide directive hints that refer to an inactive branch/block |
+| `shigan.inactive.skipDirectives` | `false` | Hide conditional hints (`#else`/`#elif`/`#endif` and Rust `#[cfg]`) that refer to an inactive branch/block/span |
 | `shigan.inactive.markInactive` | `true` | Append `(inactive)` to hints that refer to an inactive branch/block |
 | `shigan.showRange` | `true` | Include the `:start-end` range |
 | `shigan.showRangeThreshold` | `0` | Hide the range when the pair is at most N lines apart (`0` = always show) |
@@ -194,8 +194,8 @@ Basic settings:
   disabled by the user (then the fallback disagrees), and briefly lags after an
   edit. While a matching diagnostic exists it is authoritative and *replaces*
   the lexical negatives.
-- Rust hints ride the existing `shigan.show` `macros` switch; there is no
-  separate Rust toggle.
+- Rust hints are gated by the `shigan.show` `conditional` value; the C-family
+  `#if`/`#region` hints by `macros`, so the two can be toggled independently.
 
 ## Development
 

@@ -39,7 +39,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   Each language is configured independently: previously `shigan.compileFlags`, `shigan.inheritCompileCommands`
   and `shigan.preprocessor.trackFileDefines` were window-wide, now there is one value per language per window.
-  `shigan.show` keeps exactly its two values (`brackets`, `macros`) and the same default.
+- `shigan.show` gains a third value, `conditional`, which gates the Rust `#[cfg]` hints; `macros` now gates only
+  the C-family `#if`/`#region` hints (it previously covered both). Default: `["brackets","macros","conditional"]`.
+  **If you explicitly set `shigan.show`, add `"conditional"`** to keep seeing Rust `#[cfg]` hints.
 - `shigan.languages` now defaults to `["c","cpp","csharp","rust"]`, with matching `onLanguage:cpp`, `onLanguage:csharp` and `onLanguage:rust` activation events.
 - A lone `{` after a wrapped type declaration (base list / `where` clause) is now labelled with the declaration line (e.g. `class Foo`) instead of the last continuation line.
 

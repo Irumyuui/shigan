@@ -171,6 +171,7 @@ export function computeDocumentHints(
   const display: HintOptions = {
     brackets: config.show.includes('brackets'),
     macros: config.show.includes('macros'),
+    conditional: config.show.includes('conditional'),
     trigger,
     cursorOffset,
     showRange: config.showRange,
@@ -266,9 +267,10 @@ function cFamilyDocumentHints(
     syntax,
   });
   // Activity is only known to the evaluator; build the model here so the
-  // renderer receives a self-contained `conditionals` value. It is only needed
-  // when macro hints are shown — a brackets-only config skips the O(blocks)
-  // pairing entirely (computeHints builds nothing when `macros` is false).
+  // renderer receives a self-contained `conditionals` value. Every C-family
+  // model hint is macro-kind, so it is only ever rendered under the `macros`
+  // gate — a config without `macros` needs neither the evaluated activity nor
+  // the O(blocks) pairing (computeHints then only renders bracket hints).
   const conditionals = display.macros
     ? cConditionals(scanned.directives, {
         branchActive: (line) => evaluation.branchActive.get(line),

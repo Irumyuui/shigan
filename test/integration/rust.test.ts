@@ -193,9 +193,9 @@ createFixtureSuite(
     });
 
     test('shigan.show = [brackets] hides conditionals but keeps activity for matching', async () => {
-      // Conditional hints ship under the `macros` switch; with brackets only
-      // there must be none, yet the lexical activity must still exclude the
-      // inactive item's braces from matching.
+      // A brackets-only show list omits both `macros` and `conditional`, so no
+      // conditional hints render; yet the lexical activity must still exclude
+      // the inactive item's braces from matching.
       await set('show', ['brackets']);
       await openFixture(fixture.dir, 'probe.rs', 'rust');
 
@@ -216,6 +216,72 @@ createFixtureSuite(
         zzBrackets,
         [],
         `no bracket should end inside the inactive zz item: ${JSON.stringify(hints)}`
+      );
+    });
+
+    test('shigan.show = [brackets, macros] keeps C #if hints but hides Rust #[cfg]', async () => {
+      await set('show', ['brackets', 'macros']);
+
+      const cDoc = await vscode.workspace.openTextDocument({
+        language: 'c',
+        content: '#if X\nint f(void) {\n}\n#endif\n',
+      });
+      await vscode.window.showTextDocument(cDoc);
+      const cHints = await computedHints();
+      assert.ok(
+        cHints.some((hint) => hint.kind === 'macro'),
+        `C #if hints should stay under macros: ${JSON.stringify(cHints)}`
+      );
+
+      await openFixture(fixture.dir, 'probe.rs', 'rust');
+      const hints = await computedHints();
+      assert.strictEqual(
+        hints.filter((hint) => hint.kind === 'conditional').length,
+        0,
+        `macros alone must not render Rust cfg hints: ${JSON.stringify(hints)}`
+      );
+      assert.ok(
+        bracketAt(hints, ALPHA_END),
+        `the live alpha item's braces should still pair: ${JSON.stringify(hints)}`
+      );
+      const zzBrackets = hints.filter(
+        (hint) => hint.kind === 'bracket' && hint.line > ZZ_ATTR_LINE && hint.line <= ZZ_END
+      );
+      assert.deepStrictEqual(
+        zzBrackets,
+        [],
+        `hiding the cfg hint must not unexclude the inactive item's braces: ${JSON.stringify(hints)}`
+      );
+    });
+
+    test('shigan.show = [brackets, conditional] keeps Rust #[cfg] but hides C #if', async () => {
+      await set('show', ['brackets', 'conditional']);
+
+      await openFixture(fixture.dir, 'probe.rs', 'rust');
+      const hints = await pollHints(
+        (all) => conditionalAt(all, ALPHA_END)?.inactive === false,
+        'the conditional gate should still render the alpha cfg hint'
+      );
+      assert.ok(
+        hints.some((hint) => hint.kind === 'conditional'),
+        `Rust cfg hints should stay under conditional: ${JSON.stringify(hints)}`
+      );
+
+      // A live brace pair, then a directive pair: only the brackets must render.
+      const cDoc = await vscode.workspace.openTextDocument({
+        language: 'c',
+        content: 'int f(void) {\n}\n#if X\nint a;\n#endif\n',
+      });
+      await vscode.window.showTextDocument(cDoc);
+      const cHints = await computedHints();
+      assert.strictEqual(
+        cHints.filter((hint) => hint.kind === 'macro').length,
+        0,
+        `conditional alone must not render C #if hints: ${JSON.stringify(cHints)}`
+      );
+      assert.ok(
+        cHints.some((hint) => hint.kind === 'bracket'),
+        `the C brackets should stay: ${JSON.stringify(cHints)}`
       );
     });
 

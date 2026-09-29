@@ -21,7 +21,7 @@ export const BASELINE: Record<string, unknown> = {
   enable: true,
   languages: ['c', 'cpp', 'csharp', 'rust'],
   trigger: 'always',
-  show: ['brackets', 'macros'],
+  show: ['brackets', 'macros', 'conditional'],
   showRange: true,
   showRangeThreshold: 0,
   showLabel: true,

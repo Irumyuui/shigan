@@ -8,8 +8,10 @@ import { BracketToken, Hint, HintPart, ScanResult, Trigger } from './types';
 export interface HintOptions {
   /** Show bracket hints (default true). */
   brackets?: boolean;
-  /** Show preprocessor hints (default true). */
+  /** Show C-family preprocessor hints, `#if`/`#region` (default true). */
   macros?: boolean;
+  /** Show Rust `#[cfg]` conditional hints (default true). */
+  conditional?: boolean;
   /** When to show hints; `hover` and `off` produce no inlay hints here. */
   trigger?: Trigger;
   cursorOffset?: number;
@@ -25,8 +27,9 @@ export interface HintOptions {
   /** Exclude brackets in inactive branches from matching (default true). */
   skipInactiveBrackets?: boolean;
   /**
-   * Skip directive hints whose branch/block is inactive (default false, i.e.
-   * they are shown, mirroring `skipInactiveBrackets` on the bracket side).
+   * Skip conditional hints whose branch/block/span is inactive: C-family
+   * directive hints and Rust `#[cfg]` hints (default false, i.e. they are
+   * shown, mirroring `skipInactiveBrackets` on the bracket side).
    */
   skipInactiveDirectives?: boolean;
   /** Flag hints that live in inactive branches as `inactive` (default true). */
@@ -48,14 +51,17 @@ export interface HintOptions {
  * Pure and VSCode-free so it can be unit tested directly. `hover` and `off`
  * produce nothing here; the hover provider handles `hover` itself.
  *
- * `always` is deliberately uniform across both kinds: every multi-line bracket
- * pair and every directive pair is hinted, regardless of `#if` state. Inactive
- * code is handled by explicit options instead of magic:
+ * `always` is deliberately uniform across every kind: every multi-line bracket
+ * pair and every conditional pair (C directives and Rust `#[cfg]` items) is
+ * hinted, regardless of `#if` state. Inactive code is handled by explicit
+ * options instead of magic:
  *  - `skipInactiveBrackets` keeps brackets in a disabled branch out of the
  *    matching, so dead code never pairs with live code;
- *  - `skipInactiveDirectives` hides directive hints that refer to a disabled
- *    branch/block;
+ *  - `skipInactiveDirectives` hides conditional hints (C directives AND Rust
+ *    `#[cfg]`) that refer to a disabled branch/block/span;
  *  - `markInactive` flags such hints as `inactive`.
+ *  - `macros` and `conditional` select the C-family and Rust conditional hints
+ *    independently; hiding one never changes the model built for the other.
  *
  * `cursor` reports the pair under the caret, flagged the same way.
  */
@@ -96,12 +102,19 @@ export function computeHints(text: string, options: HintOptions = {}): Hint[] {
     }
   }
 
-  if (options.macros !== false) {
+  if (options.macros !== false || options.conditional !== false) {
     const model = options.conditionals ?? cConditionals(scanned.directives);
     const cursorLine =
       trigger === 'cursor' ? lineAtOffset(text, options.cursorOffset ?? -1) : -1;
 
     for (const entry of model.hints) {
+      // Each model hint is gated by its own kind: `macros` covers the C-family
+      // directive and `#region` hints, `conditional` the Rust `#[cfg]` hints.
+      // The model itself is always built when either gate is on, so hiding one
+      // kind never changes the other's activity.
+      const shown =
+        entry.kind === 'conditional' ? options.conditional !== false : options.macros !== false;
+      if (!shown) continue;
       if (trigger === 'cursor' && !cursorActivates(entry, cursorLine)) continue;
 
       // `always` means always for directives: the hint is shown even when the
