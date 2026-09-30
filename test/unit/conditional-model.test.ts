@@ -3,7 +3,7 @@ import { ConditionalHint, cursorActivates } from '../../src/core/conditionals';
 import { computeHints } from '../../src/core/hints';
 import { scan } from '../../src/core/lexer/tokenizer';
 import { cConditionals } from '../../src/core/match/c-preprocessor';
-import { Hint } from '../../src/core/types';
+import { Hint, ScanResult } from '../../src/core/types';
 import { predicates, rustHarness } from './support';
 
 const CORPUS = [
@@ -164,23 +164,42 @@ describe('computeHints (macros / conditional gates)', () => {
   it('does not build a structural model when the macros gate is off', () => {
     // C directives exist, but no `conditionals` is supplied. A structural model
     // only ever holds macro-kind entries, so with `macros:false` the renderer
-    // skips building it; the output must match the old behaviour of building the
-    // model and filtering every entry out.
+    // skips building it. Output equality alone cannot observe that skip (the
+    // filtered result is empty either way), so make the structural fallback's
+    // input observable: a `directives` accessor counts every read.
+    let reads = 0;
+    const scanned = scan(C_TEXT);
+    const counted: ScanResult = {
+      brackets: scanned.brackets,
+      get directives() {
+        reads++;
+        return scanned.directives;
+      },
+    };
+
     const skipped = computeHints(C_TEXT, {
       brackets: false,
       macros: false,
       conditional: true,
       trigger: 'always',
-    });
-    const builtAndFiltered = computeHints(C_TEXT, {
-      brackets: false,
-      macros: false,
-      conditional: true,
-      trigger: 'always',
-      conditionals: cConditionals(scan(C_TEXT).directives),
+      scanned: counted,
     });
     expect(skipped).toEqual([]);
-    expect(builtAndFiltered).toEqual([]);
+    // The fallback `cConditionals(scanned.directives)` must not run. Restoring
+    // the pre-optimization unconditional fallback reads the accessor here.
+    expect(reads).toBe(0);
+
+    // With the gate on the same scan IS read to build the structural model, so
+    // the counting probe is not simply never observed.
+    const built = computeHints(C_TEXT, {
+      brackets: false,
+      macros: true,
+      conditional: false,
+      trigger: 'always',
+      scanned: counted,
+    });
+    expect(built.map((hint) => hint.kind)).toEqual(['macro']);
+    expect(reads).toBeGreaterThan(0);
 
     // A caller-supplied model is used as-is, so the Rust `#[cfg]` entries still
     // render with `macros` off.

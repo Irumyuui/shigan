@@ -1,6 +1,6 @@
 import * as assert from 'assert';
 import * as vscode from 'vscode';
-import type { ComputedHint } from './support';
+import { bracketAt, computedHints, pollHints, type ComputedHint } from './support';
 
 const MAIN = 'int main(void) {\n}\n';
 const CHAIN = '#if X\n\n#else\n\n#endif\n';
@@ -266,6 +266,38 @@ suite('Shigan integration', () => {
       );
     } finally {
       await setShow(['brackets', 'macros', 'conditional']);
+      await setTrigger('cursor');
+    }
+  });
+
+  test('rescans an edited document instead of reusing the stage cache', async () => {
+    await setTrigger('always');
+    try {
+      const doc = await vscode.workspace.openTextDocument({
+        language: 'c',
+        content: 'int a = 1;\n',
+      });
+      await vscode.window.showTextDocument(doc);
+
+      // The first query caches the cursor-independent stage at this version.
+      assert.deepStrictEqual(await computedHints(), []);
+
+      // Edit the document in place, adding a multi-line bracket pair, and
+      // assert the hints change. The stage cache is keyed by the document
+      // version, so a stale stage would keep serving the pre-edit scan and the
+      // new pair would never appear.
+      const edit = new vscode.WorkspaceEdit();
+      edit.insert(doc.uri, new vscode.Position(1, 0), 'int main(void) {\n}\n');
+      assert.ok(await vscode.workspace.applyEdit(edit), 'the in-place edit should apply');
+
+      const after = await pollHints(
+        (hints) => hints.some((hint) => hint.kind === 'bracket' && hint.line === 2),
+        'expected a hint for the bracket pair added by the edit'
+      );
+      const pair = bracketAt(after, 2);
+      assert.ok(pair, `missing bracket hint: ${JSON.stringify(after)}`);
+      assert.match(pair.text, /:2-3/);
+    } finally {
       await setTrigger('cursor');
     }
   });

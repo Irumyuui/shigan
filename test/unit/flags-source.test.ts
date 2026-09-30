@@ -96,6 +96,26 @@ describe('findCompileCommandFlags', () => {
     expect(findCompileCommandFlags(file)).toBeUndefined();
   });
 
+  it('ignores a directory named compile_commands.json', () => {
+    const root = makeTempDir();
+    const file = path.join(root, 'a.c');
+    write(file, '');
+    // A directory with the database's name is not a database.
+    fs.mkdirSync(path.join(root, 'compile_commands.json'));
+
+    expect(findCompileCommandFlags(file)).toBeUndefined();
+  });
+
+  it('ignores a directory named compile_commands.json in an ancestor', () => {
+    const root = makeTempDir();
+    const file = path.join(root, 'src', 'a.c');
+    write(file, '');
+    // An ancestor directory with the database's name is not a database.
+    fs.mkdirSync(path.join(root, 'compile_commands.json'));
+
+    expect(findCompileCommandFlags(file)).toBeUndefined();
+  });
+
   it('serves cached entries until the cache is cleared', () => {
     const root = makeTempDir();
     const file = path.join(root, 'a.c');
