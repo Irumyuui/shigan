@@ -7,6 +7,14 @@
   "author": {
     "name": "宮凪帷"
   },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Irumyuui/shigan.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Irumyuui/shigan/issues"
+  },
+  "homepage": "https://github.com/Irumyuui/shigan#readme",
   "license": "MIT",
   "l10n": "./l10n",
   "engines": {
