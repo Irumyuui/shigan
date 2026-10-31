@@ -141,6 +141,71 @@ Basic settings:
 }
 ```
 
+## Minimal setup per language
+
+All four languages work with the defaults; the snippets below only add what a
+real project usually needs so hints follow the actual build. The settings are
+independent per language: `shigan.c.*` never affects C++ and vice versa.
+
+**C** — the defaults are enough for a single file. For a project, pass the
+flags the compiler sees:
+
+```json
+{
+  "shigan.c.compileFlags": ["-std=c11", "-Iinclude", "-DPROJECT_DEFINE=1"]
+}
+```
+
+or, when a `compile_commands.json` exists, let Shigan read it:
+
+```json
+{ "shigan.c.inheritCompileCommands": true }
+```
+
+**C++** — same shape with the C++ standard:
+
+```json
+{
+  "shigan.cpp.compileFlags": ["-std=c++20", "-Iinclude"],
+  "shigan.cpp.inheritCompileCommands": true
+}
+```
+
+**C#** — nothing is required when the file lives next to a `.csproj`:
+`shigan.csharp.inheritProject` defaults to `true`, so `DefineConstants` and the
+global target-framework symbols come from the nearest project (plus
+`Directory.Build.props`). Override only the values the project cannot express:
+
+```json
+{
+  "shigan.csharp.define": ["EXTRA_SYMBOL"],
+  "shigan.csharp.configuration": "Release",
+  "shigan.csharp.targetFramework": "net8.0"
+}
+```
+
+**Rust** — nothing is required inside a crate: `shigan.rust.inheritCargo`
+defaults to `true` and the nearest `Cargo.toml` supplies the feature universe
+and the default features; when rust-analyzer is active, its `inactive_code`
+diagnostics drive liveness. Use `shigan.rust.cfg` only for what the host
+inference cannot know (cross-compiling, CLI-enabled features, `cfg(test)`):
+
+```json
+{
+  "shigan.rust.cfg": ["-unix", "target_os = \"windows\"", "feature = \"serde\""]
+}
+```
+
+A bare entry forces the predicate true, a `-` prefix forces it false, and
+explicit entries win over both the host inference and `Cargo.toml`.
+
+Working in a single language? Restrict activation with
+`"shigan.languages": ["cpp"]`.
+
+Keys from before the per-language split (for example `shigan.compileFlags` or
+`shigan.preprocessor.*`) are ignored; see the migration table in
+[`CHANGELOG.md`](CHANGELOG.md).
+
 ## Known limitations
 
 - Brackets produced by macro expansion (`#define OPEN {` then `OPEN`) cannot be
