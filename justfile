@@ -62,5 +62,5 @@ install:
     bun run install:vsix
 
 # Bump the version, commit and tag a release (needs a CHANGELOG.md entry)
-release version:
-    bun run scripts/release.ts {{version}}
+release *args:
+    bun run scripts/release.ts {{args}}
