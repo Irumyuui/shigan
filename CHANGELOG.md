@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-31
+
 ### Added
 
 - C++ support: `.cpp` files are scanned like C plus raw string literals (`R"(...)"`), and `-std=c++NN` defines `__cplusplus`.
@@ -83,7 +85,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Settings for the trigger mode, active languages, hint ranges, labels and macro sources.
 - English, Simplified Chinese and Japanese UI localization.
 
-[Unreleased]: https://github.com/Irumyuui/shigan/compare/v0.0.3...HEAD
+[Unreleased]: https://github.com/Irumyuui/shigan/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/Irumyuui/shigan/releases/tag/v0.1.0
 [0.0.3]: https://github.com/Irumyuui/shigan/releases/tag/v0.0.3
 [0.0.2]: https://github.com/Irumyuui/shigan/releases/tag/v0.0.2
 [0.0.1]: https://github.com/Irumyuui/shigan/releases/tag/v0.0.1
