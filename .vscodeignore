@@ -18,5 +18,9 @@ bun.lockb
 .vscode-test.mjs
 .gitignore
 AGENTS.md
+# Local, untracked scratch: never ship it. `images/` is not the extension icon
+# (package.json declares none); track it and add an `icon` entry before shipping.
+.cortexkit/**
+images/**
 **/*.map
 **/*.ts
