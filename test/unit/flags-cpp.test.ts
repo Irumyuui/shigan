@@ -22,4 +22,13 @@ describe('parseCompileFlags standard macros', () => {
     expect(value('c++23')).toBe('202302');
     expect(value('gnu++17')).toBe('201703');
   });
+
+  it('substitutes a separated -std value', () => {
+    const { macros } = parseCompileFlags(
+      ['-std', '${std}'],
+      (v) => (v === 'std' ? 'c++20' : undefined),
+      syntaxFor('cpp')
+    );
+    expect(macros.get('__cplusplus')?.value).toBe('202002');
+  });
 });

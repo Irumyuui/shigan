@@ -78,13 +78,14 @@ export function parseCompileFlags(
     }
 
     if (raw.startsWith('-U')) {
-      const name = (raw === '-U' ? flags[++i] ?? '' : raw.slice(2)).trim();
+      const name = (raw === '-U' ? substitute(flags[++i] ?? '') : raw.slice(2)).trim();
       if (name) macros.delete(name);
       continue;
     }
 
     if (raw === '-std') {
-      standard = flags[++i]?.trim();
+      const value = flags[++i];
+      standard = value === undefined ? undefined : substitute(value).trim();
       continue;
     }
     if (raw.startsWith('-std=')) {

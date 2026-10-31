@@ -50,6 +50,25 @@ describe('parseCompileFlags', () => {
     );
     expect(macros.get('PATH')?.value).toBe('/ws');
   });
+
+  it('substitutes a separated -std value', () => {
+    const { standard, macros } = parseCompileFlags(['-std', '${std}'], (v) =>
+      v === 'std' ? 'c17' : undefined
+    );
+    expect(standard).toBe('c17');
+    expect(evaluateExpression('__STDC_VERSION__', macros)).toBe(201710);
+  });
+
+  it('keeps an unknown variable in a separated -std value', () => {
+    expect(parseCompileFlags(['-std', '${nope}']).standard).toBe('${nope}');
+  });
+
+  it('substitutes a separated -U value', () => {
+    const { macros } = parseCompileFlags(['-DFOO=1', '-U', '${name}'], (v) =>
+      v === 'name' ? 'FOO' : undefined
+    );
+    expect(macros.has('FOO')).toBe(false);
+  });
 });
 
 describe('substituteVariables', () => {

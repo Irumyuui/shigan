@@ -48,6 +48,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - C# project files: commented-out `<DefineConstants>` / `<TargetFramework>` in `.csproj` / `Directory.Build.props` are ignored.
+- `shigan.*.compileFlags`: a separated `-std ${...}` / `-U ${...}` value now expands `${...}` variables like `-D` / `-I` already did.
 
 ### Internal
 
